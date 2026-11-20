@@ -6,6 +6,14 @@ const contact = 0.035;
 const release = 0.055;
 const paper = [0.98, 0.96, 0.92, 0.78];
 const violet = [0.55, 0.42, 0.95, 0.93];
+const confirmButton = {left: 0.25, right: 0.75, top: 0.60, bottom: 0.93};
+const sampleWindow = 110;
+const stableDuration = 42;
+const maxDrift = 0.02;
+
+function handKey(source) {
+  return source.handedness === 'left' || source.handedness === 'right' ? source.handedness : source;
+}
 
 function instructionPanel(transform) {
   const direction = forward(transform.orientation);
@@ -14,8 +22,8 @@ function instructionPanel(transform) {
   const right = cross(facing, [0, 1, 0]);
   const center = add(xyz(transform.position), mul(direction, 0.92));
   return {
-    origin: add(add(center, mul(right, -0.38)), [0, -0.13, 0]),
-    right, down: [0, -1, 0], normal: mul(facing, -1), width: 0.76, height: 0.15
+    origin: add(add(center, mul(right, -0.46)), [0, -0.08, 0]),
+    right, down: [0, -1, 0], normal: mul(facing, -1), width: 0.92, height: 0.24
   };
 }
 
@@ -117,7 +125,8 @@ export async function enterMR(board, onEnd, onFailure) {
     let activeHand = null;
     let lastPoint = null;
     let blockedHand = null;
-    let pinched = new WeakMap();
+    const pinched = new Map();
+    const fingertipSamples = new Map();
     let displayedText = '';
     let displayedRevision = -1;
 
@@ -132,12 +141,13 @@ export async function enterMR(board, onEnd, onFailure) {
       wall = toolbar = blockedHand = null;
       points = [];
       message = '';
-      pinched = new WeakMap();
+      pinched.clear();
+      fingertipSamples.clear();
     };
     space.addEventListener('reset', reset);
 
-    function updateHUD(title, detail, hovered) {
-      const key = JSON.stringify([Boolean(wall), title, detail, board.tool, hovered]);
+    function updateHUD(title, detail, hovered, confirmation) {
+      const key = JSON.stringify([Boolean(wall), title, detail, board.tool, hovered, confirmation]);
       if (key === displayedText) return;
       displayedText = key;
       paint.clearRect(0, 0, hud.width, hud.height);
@@ -166,30 +176,37 @@ export async function enterMR(board, onEnd, onFailure) {
           }
         });
       } else {
-        paint.textAlign = 'left';
+        paint.textAlign = 'center';
         paint.fillStyle = '#fff6ed';
-        paint.font = 'bold 46px sans-serif';
-        paint.fillText(title, 36, 62);
+        paint.font = 'bold 40px sans-serif';
+        paint.fillText(title, hud.width / 2, 36);
         paint.fillStyle = '#e5d7fa';
-        paint.font = '34px sans-serif';
-        paint.fillText(detail, 36, 130, hud.width - 72);
+        paint.font = '30px sans-serif';
+        paint.fillText(detail, hud.width / 2, 84, hud.width - 40);
+        const {left, right, top, bottom} = confirmButton;
+        paint.fillStyle = confirmation?.ready ? (confirmation.hovered ? '#fff6ed' : '#e5d7fa') : '#41445c';
+        paint.fillRect(left * hud.width, top * hud.height, (right - left) * hud.width, (bottom - top) * hud.height);
+        paint.fillStyle = confirmation?.ready ? '#25273a' : '#e5d7fa';
+        paint.font = 'bold 34px sans-serif';
+        paint.fillText('Записать точку', hud.width / 2, (top + bottom) * hud.height / 2);
       }
       renderer.update(renderer.interfaceTexture, hud);
     }
 
-    function toolbarHit(hand, frame) {
-      const position = project(toolbar, hand.held ? hand.pinch : hand.tip);
+    function panelHit(panel, hand, frame) {
+      const position = project(panel, hand.held ? hand.pinch : hand.tip);
       if (inside(position) && Math.abs(position[2]) < 0.11) return position;
       const ray = frame.getPose(hand.source.targetRaySpace, space)?.transform;
-      return ray && rayToPanel(toolbar, xyz(ray.position), forward(ray.orientation));
+      return ray && rayToPanel(panel, xyz(ray.position), forward(ray.orientation));
     }
 
     function actionIndex(hit) {
       return Math.min(actions.length - 1, Math.floor(hit[0] * actions.length));
     }
 
-    function markCorner(hand, viewer) {
-      points.push(hand.pinch);
+    function markCorner({point, key}, viewer) {
+      points.push(point);
+      fingertipSamples.clear();
       message = '';
       if (points.length === 2 && length(sub(points[1], points[0])) < 0.25) {
         points.pop();
@@ -199,17 +216,56 @@ export async function enterMR(board, onEnd, onFailure) {
       wall = makeWall(...points, viewer);
       if (wall) {
         toolbar = toolbarPanel(wall);
-        blockedHand = hand.source;
+        blockedHand = key;
       } else {
         points = [];
         message = 'Отметь углы по порядку, начиная с верхнего левого';
       }
     }
 
+    function calibrate(hands, panel, frame, time, viewer) {
+      for (const [key, history] of fingertipSamples) {
+        const recent = history.filter(sample => time - sample.time <= sampleWindow);
+        if (recent.length) fingertipSamples.set(key, recent);
+        else fingertipSamples.delete(key);
+      }
+      for (const hand of hands) {
+        const key = handKey(hand.source);
+        if (hand.held) {
+          fingertipSamples.delete(key);
+          continue;
+        }
+        let samples = fingertipSamples.get(key) ?? [];
+        if (samples.some(sample => length(sub(sample.point, hand.tip)) > maxDrift)) samples = [];
+        samples.push({point: hand.tip, time});
+        fingertipSamples.set(key, samples);
+      }
+      // Keep a stable fingertip briefly if the cameras lose it right at the wall.
+      const probes = [];
+      for (const [key, samples] of fingertipSamples) {
+        if (samples.length < 3 || samples.at(-1).time - samples[0].time < stableDuration) continue;
+        const total = samples.reduce((sum, sample) => add(sum, sample.point), [0, 0, 0]);
+        probes.push({key, point: mul(total, 1 / samples.length)});
+      }
+      const targets = hands.filter(hand => {
+        const hit = panelHit(panel, hand, frame);
+        return hit && hit[0] >= confirmButton.left && hit[0] <= confirmButton.right &&
+          hit[1] >= confirmButton.top && hit[1] <= confirmButton.bottom;
+      });
+      const otherProbe = hand => probes.find(probe => probe.key !== handKey(hand.source));
+      const pressedTarget = targets.find(hand => hand.pressed && otherProbe(hand));
+      if (pressedTarget) {
+        markCorner(otherProbe(pressedTarget), viewer);
+        return {hovered: false, ready: false, aiming: false};
+      }
+      const hovered = targets.some(otherProbe);
+      return {hovered, ready: hovered || (!targets.length && hands.some(otherProbe)), aiming: targets.length > 0};
+    }
+
     function drawWith(hand, hands) {
-      const blocked = hands.find(input => input.source === blockedHand);
-      if (!blocked || Math.abs(project(wall, blocked.tip)[2]) > release) blockedHand = null;
-      if (!hand || hand.held || hand.source === blockedHand) {
+      const blocked = hands.find(input => handKey(input.source) === blockedHand);
+      if (blocked && Math.abs(project(wall, blocked.tip)[2]) > release) blockedHand = null;
+      if (!hand || hand.held || handKey(hand.source) === blockedHand) {
         lift();
         return;
       }
@@ -225,7 +281,7 @@ export async function enterMR(board, onEnd, onFailure) {
       board.stroke(pos[0], pos[1]);
     }
 
-    function tick(_time, frame) {
+    function tick(time, frame) {
       if (stopped || failed) return;
       try {
         session.requestAnimationFrame(tick);
@@ -233,19 +289,26 @@ export async function enterMR(board, onEnd, onFailure) {
         const pose = frame.getViewerPose(space);
         if (!pose || session.visibilityState !== 'visible') {
           lift();
-          pinched = new WeakMap();
+          pinched.clear();
+          fingertipSamples.clear();
           return;
         }
-        const hands = Array.from(session.inputSources, source => readHand(frame, space, source, pinched)).filter(Boolean);
+        const sources = Array.from(session.inputSources);
+        for (const source of pinched.keys()) {
+          if (!sources.includes(source)) pinched.delete(source);
+        }
+        const hands = sources.map(source => readHand(frame, space, source, pinched)).filter(Boolean);
         const pressing = hands.find(hand => hand.pressed);
         const writingHand = hands.find(hand => hand.source === activeHand) ??
-          (wall && hands.filter(hand => !hand.held && hand.source !== blockedHand)
+          (wall && hands.filter(hand => !hand.held && handKey(hand.source) !== blockedHand)
             .map(hand => ({hand, pos: project(wall, hand.tip)}))
             .filter(({pos}) => inside(pos))
             .sort((a, b) => Math.abs(a.pos[2]) - Math.abs(b.pos[2]))[0]?.hand);
 
+        let placementPanel;
+        let confirmation;
         if (wall) {
-          const hit = pressing && toolbarHit(pressing, frame);
+          const hit = pressing && panelHit(toolbar, pressing, frame);
           if (hit) {
             lift();
             const action = actions[actionIndex(hit)];
@@ -254,15 +317,18 @@ export async function enterMR(board, onEnd, onFailure) {
           } else {
             drawWith(writingHand, hands);
           }
-        } else if (pressing) {
-          markCorner(pressing, xyz(pose.transform.position));
+        } else {
+          placementPanel = instructionPanel(pose.transform);
+          confirmation = calibrate(hands, placementPanel, frame, time, xyz(pose.transform.position));
         }
 
-        const panel = wall ? toolbar : instructionPanel(pose.transform);
-        const hovered = wall && hands.map(hand => toolbarHit(hand, frame)).find(Boolean);
+        const panel = wall ? toolbar : placementPanel ?? instructionPanel(pose.transform);
+        const hovered = wall && hands.map(hand => panelHit(toolbar, hand, frame)).find(Boolean);
+        const detail = confirmation?.hovered ? 'Сделай щипок другой рукой' : confirmation?.aiming
+          ? 'Подержи указательный палец у стены'
+          : 'Палец у стены · другой рукой наведи на кнопку';
         updateHUD(wall ? '' : (points.length + 1) + ' / 3   ' + instructions[points.length],
-          message || (hands.length ? 'Отметь угол щипком у стены' : 'Подними руку перед собой'),
-          hovered ? actionIndex(hovered) : null);
+          wall ? '' : message || detail, hovered ? actionIndex(hovered) : null, wall ? null : confirmation);
         if (wall && board.revision !== displayedRevision) {
           displayedRevision = board.revision;
           renderer.update(renderer.ink, board.canvas);

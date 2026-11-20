@@ -1,4 +1,4 @@
-import { enterMR } from './xr.mjs';
+import { enterMR } from './xr.mjs?v=2';
 
 const colors = {indigo: '#4946a6', red: '#c0314b', teal: '#007d72'};
 const canvas = document.querySelector('#ink');
