@@ -1,4 +1,4 @@
-import { enterVR } from './vr.mjs';
+import { enterVR } from './vr.mjs?v=4';
 
 const colors = {black: '#263238', indigo: '#4946a6', red: '#c0314b', teal: '#007d72', orange: '#b65a08'};
 const canvas = document.querySelector('#ink');

@@ -3,10 +3,13 @@ import { at } from './geometry.mjs';
 const vertexSource = [
   'attribute vec3 aPosition;',
   'attribute vec2 aUV;',
+  'attribute float aShade;',
   'uniform mat4 uProjection, uView;',
   'varying vec2 vUV;',
+  'varying mediump float vShade;',
   'void main() {',
   '  vUV = aUV;',
+  '  vShade = aShade;',
   '  gl_Position = uProjection * uView * vec4(aPosition, 1.0);',
   '}'
 ].join('\n');
@@ -17,6 +20,7 @@ const fragmentSource = [
   'uniform vec4 uBacking;',
   'uniform float uBorder;',
   'varying vec2 vUV;',
+  'varying mediump float vShade;',
   'void main() {',
   '  vec4 ink = texture2D(uTexture, vUV);',
   '  float backdrop = uBacking.a * (1.0 - ink.a);',
@@ -27,7 +31,7 @@ const fragmentSource = [
   '    color = vec3(0.35, 0.31, 0.69);',
   '    alpha = 0.92;',
   '  }',
-  '  gl_FragColor = vec4(color, alpha);',
+  '  gl_FragColor = vec4(color * vShade, alpha);',
   '}'
 ].join('\n');
 
@@ -46,10 +50,10 @@ export function makeRenderer(gl) {
   gl.useProgram(program);
   const buffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-  for (const [name, count, offset] of [['aPosition', 3, 0], ['aUV', 2, 12]]) {
+  for (const [name, count, offset] of [['aPosition', 3, 0], ['aUV', 2, 12], ['aShade', 1, 20]]) {
     const location = gl.getAttribLocation(program, name);
     gl.enableVertexAttribArray(location);
-    gl.vertexAttribPointer(location, count, gl.FLOAT, false, 20, offset);
+    gl.vertexAttribPointer(location, count, gl.FLOAT, false, 24, offset);
   }
   const projection = gl.getUniformLocation(program, 'uProjection');
   const viewMatrix = gl.getUniformLocation(program, 'uView');
@@ -77,7 +81,7 @@ export function makeRenderer(gl) {
   const ink = createTexture();
   const interfaceTexture = createTexture();
   const allocated = new Set();
-  const vertices = new Float32Array(20);
+  const vertices = new Float32Array(24);
   const corners = [[0, 0], [1, 0], [0, 1], [1, 1]];
 
   function update(texture, canvas) {
@@ -91,7 +95,7 @@ export function makeRenderer(gl) {
   }
 
   function draw(panel, texture, backing, border = 0, depth = 0) {
-    corners.forEach(([u, v], i) => vertices.set([...at(panel, u, v, depth), u, v], i * 5));
+    corners.forEach(([u, v], i) => vertices.set([...at(panel, u, v, depth), u, v, 1], i * 6));
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.uniform4fv(backingColor, backing);
     gl.uniform1f(borderWidth, border);
@@ -101,6 +105,13 @@ export function makeRenderer(gl) {
 
   return {
     ink, interfaceTexture, empty, createTexture, update, draw,
+    drawSolid(vertices, color) {
+      gl.bindTexture(gl.TEXTURE_2D, empty);
+      gl.uniform4fv(backingColor, color);
+      gl.uniform1f(borderWidth, 0);
+      gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, vertices.length / 6);
+    },
     begin(layer) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
