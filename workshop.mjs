@@ -3,10 +3,18 @@ import { add, at, cross, dot, forward, inside, length, mul, project, sub, unit, 
 export const clamp = (n, min, max) => Math.max(min, Math.min(n, max));
 export const limits = {
   height: [0.75, 2], tilt: [0, 75], yaw: [-40, 40], distance: [1.1, 2.65],
-  size: [0.65, 1.16], resistance: [0, 4], haptics: [0, 4], gripLeft: [-65, 65], gripRight: [-65, 65], speed: [0.45, 1.65]
+  size: [0.65, 1.16], resistance: [0, 4], haptics: [0, 4], gripLeft: [-65, 65], gripRight: [-65, 65],
+  speed: [0.45, 1.65], shift: [-0.8, 0.8], width: [4, 34], volume: [0, 4],
+  grid: [0, 2], light: [0, 4], trail: [0, 4], angle: [5, 175], angleStep: [1, 15],
+  turn: [0, 60], moveMode: [0, 2], comfort: [0, 4], acceleration: [2, 18],
+  turnSpeed: [30, 150], hand: [0, 1], touch: [3, 20]
 };
 const defaults = {height: 1.4, tilt: 0, yaw: 0, distance: 2.12, size: 1, resistance: 2, haptics: 2,
-  gripLeft: 0, gripRight: 0, speed: 0.9, locked: false, hold: false};
+  gripLeft: 0, gripRight: 0, speed: 0.9, shift: 0, width: 14, volume: 2, grid: 0, light: 3,
+  trail: 2, angle: 60, angleStep: 5, turn: 30, moveMode: 0, comfort: 2, acceleration: 9,
+  turnSpeed: 90, hand: 0, touch: 8, locked: false, hold: false, magnetic: true, freeze: true,
+  directional: false, trayLeft: false, color: 'indigo'};
+export const placementKeys = ['height', 'tilt', 'yaw', 'distance', 'shift', 'size'];
 const key = 'wallspace.workshop.v1';
 
 export function loadSettings() {
@@ -16,9 +24,26 @@ export function loadSettings() {
     for (const [name, range] of Object.entries(limits)) {
       if (Number.isFinite(stored?.[name])) settings[name] = clamp(stored[name], ...range);
     }
-    for (const name of ['locked', 'hold']) {
+    for (const name of ['locked', 'hold', 'magnetic', 'freeze', 'directional', 'trayLeft']) {
       if (typeof stored?.[name] === 'boolean') settings[name] = stored[name];
     }
+    if (['black', 'indigo', 'red', 'teal', 'orange'].includes(stored?.color)) settings.color = stored.color;
+    for (const name of ['gripOffsetLeft', 'gripOffsetRight']) {
+      const values = stored?.[name];
+      if (Array.isArray(values) && values.length === 3 && values.every(value => Number.isFinite(value) && Math.abs(value) <= 0.16)) {
+        settings[name] = values;
+      }
+    }
+    if (placementKeys.every(name => Number.isFinite(stored?.personal?.[name]))) {
+      settings.personal = Object.fromEntries(placementKeys.map(name => [name, clamp(stored.personal[name], ...limits[name])]));
+    }
+    if (stored?.nib === 'chisel') settings.nib = 'chisel';
+    if (typeof stored?.rulerVisible === 'boolean') settings.rulerVisible = stored.rulerVisible;
+    const ruler = stored?.ruler;
+    if (Array.isArray(ruler) && ruler.length === 2 && ruler.every(point =>
+      Array.isArray(point) && point.length === 2 &&
+      point.every((value, index) => Number.isFinite(value) && value >= 60 && value <= [1380, 900][index])) &&
+      length(sub(ruler[0], ruler[1])) >= 120) settings.ruler = ruler;
   } catch {}
   return settings;
 }
@@ -67,7 +92,7 @@ export function constrainWalk(room, from, to) {
   return next;
 }
 
-export function markerPose(transform, grip) {
+export function markerPose(transform, grip, offset = [0, 0, 0]) {
   const direction = forward(transform.orientation);
   const q = transform.orientation;
   const localUp = [2 * (q.x * q.y - q.w * q.z), 1 - 2 * (q.x ** 2 + q.z ** 2),
@@ -75,12 +100,15 @@ export function markerPose(transform, grip) {
   const angle = grip * Math.PI / 180;
   const axis = add(mul(direction, Math.cos(angle)), mul(localUp, Math.sin(angle)));
   const base = add(xyz(transform.position), mul(localUp, 0.018));
-  return {axis, tip: add(base, mul(axis, 0.155))};
+  const localRight = cross(direction, localUp);
+  const tip = add(add(base, mul(axis, 0.155)), add(mul(localRight, offset[0]),
+    add(mul(localUp, offset[1]), mul(direction, offset[2]))));
+  return {axis, tip, localRight, localUp, direction};
 }
 
-export function contactPoint(panel, tip, previous, resistance) {
+export function contactPoint(panel, tip, previous, resistance, tolerance = 0.008) {
   const position = project(panel, tip);
-  if (!inside(position) || position[2] > (previous ? 0.017 : 0.008) || position[2] < -0.065) return null;
+  if (!inside(position) || position[2] > tolerance + (previous ? 0.009 : 0) || position[2] < -0.065) return null;
   const raw = position.slice(0, 2);
   if (!previous) return {raw, ink: raw, delta: null};
   const delta = sub(raw, previous.raw);
@@ -121,7 +149,9 @@ export function drawMarker(renderer, pose, color) {
     for (let i = 0; i < 8; i++) {
       const a = ring[i];
       const b = ring[(i + 1) % 8];
-      const frontA = add(front, mul(a, nose)), frontB = add(front, mul(b, nose));
+      const profile = (point, radius) => pose.chisel && start === 0 && pose.localUp
+        ? mul(add(point, mul(pose.localUp, -0.66 * dot(point, pose.localUp))), radius * 1.34) : mul(point, radius);
+      const frontA = add(front, profile(a, nose)), frontB = add(front, profile(b, nose));
       const backA = add(back, mul(a, tail)), backB = add(back, mul(b, tail));
       const shade = 0.76 + 0.24 * (Math.sin(i * Math.PI / 4) + 1) / 2;
       for (const point of [frontA, backA, backB, frontA, backB, frontB]) vertices.push(...point, 0, 0, shade);
@@ -136,6 +166,7 @@ export function drawMarker(renderer, pose, color) {
   }
 }
 
-export function rackPosition(board, index, count) {
-  return at(board, 0.14 + index * (0.72 / Math.max(1, count - 1)), 1.045, 0.12);
+export function rackPosition(board, index, count, left = false) {
+  const u = 0.15 + index * (0.48 / Math.max(1, count - 1));
+  return at(board, left ? 1 - u : u, 1.045, 0.12);
 }

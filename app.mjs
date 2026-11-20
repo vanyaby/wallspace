@@ -1,4 +1,4 @@
-import { enterVR } from './vr.mjs?v=4';
+import { enterVR } from './vr.mjs?v=5';
 
 const colors = {black: '#263238', indigo: '#4946a6', red: '#c0314b', teal: '#007d72', orange: '#b65a08'};
 const canvas = document.querySelector('#ink');
@@ -48,12 +48,11 @@ function remember() {
   undoButton.disabled = false;
 }
 
-function stroke(u, v) {
+function stroke(u, v, thickness, erase = tool === 'eraser') {
   const x = u * canvas.width;
   const y = v * canvas.height;
-  const erasing = tool === 'eraser';
-  const width = erasing ? 54 : 14;
-  context.globalCompositeOperation = erasing ? 'destination-out' : 'source-over';
+  const width = thickness ?? (erase ? 54 : 14);
+  context.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
   context.strokeStyle = context.fillStyle = colors[tool] ?? '#000';
   context.lineCap = 'round';
   context.lineWidth = width;
@@ -71,12 +70,12 @@ function stroke(u, v) {
   revision++;
 }
 
-function stamp({points, closed}) {
+function stamp({points, closed}, thickness = 14) {
   endStroke();
   remember();
   context.globalCompositeOperation = 'source-over';
   context.strokeStyle = colors[tool] ?? colors.indigo;
-  context.lineWidth = 14;
+  context.lineWidth = thickness;
   context.lineCap = 'round';
   context.lineJoin = 'round';
   context.beginPath();
@@ -84,6 +83,14 @@ function stamp({points, closed}) {
   for (const point of points.slice(1)) context.lineTo(...point);
   if (closed) context.closePath();
   context.stroke();
+  revision++;
+  queueSave();
+}
+
+function clear() {
+  endStroke();
+  remember();
+  context.clearRect(0, 0, canvas.width, canvas.height);
   revision++;
   queueSave();
 }
@@ -160,7 +167,7 @@ document.querySelector('#export').addEventListener('click', () => {
   file.click();
 });
 
-const board = {canvas, colors, stroke, stamp, endStroke, undo, selectTool,
+const board = {canvas, colors, stroke, stamp, endStroke, undo, clear, selectTool,
   get revision() { return revision; },
   get tool() { return tool; }};
 

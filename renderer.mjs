@@ -19,6 +19,7 @@ const fragmentSource = [
   'uniform sampler2D uTexture;',
   'uniform vec4 uBacking;',
   'uniform float uBorder;',
+  'uniform float uOpacity;',
   'varying vec2 vUV;',
   'varying mediump float vShade;',
   'void main() {',
@@ -31,7 +32,7 @@ const fragmentSource = [
   '    color = vec3(0.35, 0.31, 0.69);',
   '    alpha = 0.92;',
   '  }',
-  '  gl_FragColor = vec4(color * vShade, alpha);',
+  '  gl_FragColor = vec4(color * vShade, alpha * uOpacity);',
   '}'
 ].join('\n');
 
@@ -59,6 +60,8 @@ export function makeRenderer(gl) {
   const viewMatrix = gl.getUniformLocation(program, 'uView');
   const backingColor = gl.getUniformLocation(program, 'uBacking');
   const borderWidth = gl.getUniformLocation(program, 'uBorder');
+  const opacity = gl.getUniformLocation(program, 'uOpacity');
+  gl.uniform1f(opacity, 1);
   gl.enable(gl.BLEND);
   gl.enable(gl.DEPTH_TEST);
   gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -105,6 +108,18 @@ export function makeRenderer(gl) {
 
   return {
     ink, interfaceTexture, empty, createTexture, update, draw,
+    drawDecal(panel, texture, background, depth) {
+      gl.depthMask(false);
+      draw(panel, texture, background, 0, depth);
+      gl.depthMask(true);
+    },
+    drawScreen(panel, texture, background, strength) {
+      gl.disable(gl.DEPTH_TEST);
+      gl.uniform1f(opacity, strength);
+      draw(panel, texture, background);
+      gl.uniform1f(opacity, 1);
+      gl.enable(gl.DEPTH_TEST);
+    },
     drawSolid(vertices, color) {
       gl.bindTexture(gl.TEXTURE_2D, empty);
       gl.uniform4fv(backingColor, color);

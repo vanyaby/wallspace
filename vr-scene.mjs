@@ -49,26 +49,33 @@ export function arrangeBoard(room, settings) {
   const right = rotateY(room.right, turn);
   const toward = rotateY(mul(room.ahead, -1), turn);
   const downAxis = add(mul(down, Math.cos(tilt)), mul(toward, Math.sin(tilt)));
-  const center = room.position(-0.28, settings.height, settings.distance);
+  const center = room.position(-0.28 + settings.shift, settings.height, settings.distance);
   const width = 2.16 * settings.size;
   const height = 1.44 * settings.size;
   const board = panel(add(add(center, mul(right, -width / 2)), mul(downAxis, -height / 2)), right, downAxis, width, height);
-  const palette = panel(room.position(1.1, 2.08, Math.min(settings.distance, 1.95)), room.right, down, 0.68, 1.44);
+  const palette = panel(room.position(1.65, 2.10, Math.min(settings.distance, 1.95)), room.right, down, 0.68, 1.44);
+  const practice = panel(room.position(1.65, 0.61, Math.min(settings.distance, 1.95)), room.right, down, 0.68, 0.31);
   const frame = panel(at(board, -0.025, -0.035, -0.035), right, downAxis, width * 1.05, height * 1.07);
   const tray = panel(at(board, -0.025, 1.075, -0.008), right, mul(downAxis, -1), width * 1.05, 0.11);
   const trayTop = panel(at(board, -0.025, 1.01, 0), right, toward, width * 1.05, 0.22);
   const supports = [-0.55, 0.35].map(x =>
-    panel(room.position(x, settings.height, settings.distance + 0.12), room.right, down, 0.09, settings.height));
+    panel(room.position(x + settings.shift, settings.height, settings.distance + 0.12), room.right, down, 0.09, settings.height));
   const handles = [-0.052, 1.052].map(u => at(board, u, 0.53, 0.045));
-  Object.assign(room, {board, palette, handles, hardware: [frame, tray, trayTop, ...supports]});
+  const hinge = at(board, -0.067, 0.77, 0.065);
+  Object.assign(room, {board, palette, practice, handles, hinge, hardware: [frame, tray, trayTop, ...supports]});
 }
 
-export function renderRoom(renderer, room, overlay) {
-  for (const [surface, color] of room.solids) renderer.draw(surface, renderer.empty, color);
+export function renderRoom(renderer, room, overlay, grid, practice, lighting) {
+  const light = 0.55 + lighting * 0.15;
+  for (const [surface, color] of room.solids) {
+    renderer.draw(surface, renderer.empty, [...color.slice(0, 3).map(value => value * light), 1]);
+  }
   for (const surface of room.hardware) renderer.draw(surface, renderer.empty, [0.31, 0.37, 0.33, 1]);
   renderer.draw(room.board, renderer.ink, paper);
-  renderer.draw(room.board, overlay, transparent, 0, 0.003);
+  renderer.drawDecal(room.board, grid, transparent, 0.002);
+  renderer.drawDecal(room.board, overlay, transparent, 0.033);
   renderer.draw(room.palette, renderer.interfaceTexture, transparent);
+  renderer.draw(room.practice, practice, paper);
   for (const point of room.handles) {
     const {right, down} = room.board;
     const rail = panel(add(point, add(mul(right, -0.021), mul(down, -0.10))), right, down, 0.042, 0.20);
@@ -92,33 +99,53 @@ export function drawPointer(renderer, {surface, uv, origin, direction}, color) {
 }
 
 export const adjustments = [
-  ['height', 'Высота', 0.05, ' м'], ['tilt', 'Наклон', 5, '°'],
-  ['yaw', 'Поворот', 5, '°'], ['distance', 'Дальность', 0.10, ' м'],
-  ['size', 'Размер', 0.05, '×'], ['resistance', 'Тугость', 1, '/4'],
-  ['haptics', 'Вибрация', 1, '/4'], ['gripLeft', 'Хват левой', 5, '°'],
-  ['gripRight', 'Хват правой', 5, '°'],
-  ['speed', 'Шаг', 0.15, ' м/с']
+  ['height', 'Высота', 0.01, ' м', 0], ['tilt', 'Наклон', 5, '°', 0],
+  ['yaw', 'Разворот', 5, '°', 0], ['distance', 'Дальность', 0.10, ' м', 0],
+  ['shift', 'Сдвиг', 0.10, ' м', 0], ['size', 'Размер', 0.05, '×', 0],
+  ['grid', 'Поверхность', 1, '', 0, ['Чистая', 'Точки', 'Клетка']], ['light', 'Яркость', 1, '/4', 0],
+  ['resistance', 'Тугость', 1, '/4', 1, ['Свободное', '1/4', 'Письмо', '3/4', 'Плотное']], ['width', 'Толщина', 2, '', 1],
+  ['haptics', 'Вибрация', 1, '/4', 1], ['volume', 'Громкость', 1, '/4', 1],
+  ['gripLeft', 'Хват левой', 5, '°', 1], ['gripRight', 'Хват правой', 5, '°', 1],
+  ['touch', 'Контакт', 1, ' мм', 1], ['trail', 'Сглаживание', 1, '/4', 1],
+  ['speed', 'Скорость', 0.15, ' м/с', 2], ['acceleration', 'Разгон', 2, '', 2],
+  ['turn', 'Поворот', 15, '°', 2, null], ['turnSpeed', 'Темп поворота', 15, '°/с', 2],
+  ['comfort', 'Затемнение', 1, '/4', 2],
+  ['moveMode', 'Движение', 1, '', 2, ['Оба', 'Стик', 'Телепорт']],
+  ['hand', 'Ведущая', 1, '', 2, ['Правая', 'Левая']],
+  ['angle', 'Угол', 5, '°', 3], ['angleStep', 'Шаг угла', 1, '°', 3]
 ];
 
-export function paletteButtons(colors, protractor, settingsOpen, settings) {
+export function paletteButtons(colors, protractor, settingsOpen, settings, page = 0, confirm = false) {
   if (settingsOpen) {
-    const buttons = adjustments.flatMap(([id, label, , unit], row) => {
-      const y = 135 + row * 75;
-      const name = label + ' ' + Number(settings[id].toFixed(2)) + unit;
+    const tabs = ['Доска', 'Перо', 'Ходьба', 'Геометрия'].map((label, i) =>
+      ({id: 'page:' + i, label, x: 22 + i * 141, y: 96, w: 134, h: 58}));
+    const buttons = adjustments.filter(([, , , , tab]) => page === tab).flatMap(([id, label, , unit, , names], row) => {
+      const y = 170 + row * 74;
+      const value = names?.[settings[id]] ?? (id === 'turn' && !settings.turn ? 'Плавно' : Number(settings[id].toFixed(2)) + unit);
+      const name = label + ' · ' + value;
       return [{id: id + ':-', label: '−', x: 28, y, w: 90, h: 68},
         {id: id + ':label', label: name, x: 126, y, w: 348, h: 68, readOnly: true},
         {id: id + ':+', label: '+', x: 482, y, w: 90, h: 68}];
     });
-    buttons.push(
-      {id: 'seated', label: 'Сидя', x: 28, y: 894, w: 171, h: 85},
-      {id: 'standing', label: 'Стоя', x: 214, y: 894, w: 171, h: 85},
-      {id: 'drafting', label: 'Чертёж', x: 401, y: 894, w: 171, h: 85},
-      {id: 'locked', label: settings.locked ? 'Разблокировать' : 'Зафиксировать', x: 28, y: 999, w: 264, h: 85},
-      {id: 'hold', label: settings.hold ? 'Хват: держать' : 'Хват: кнопка', x: 308, y: 999, w: 264, h: 85},
+    const extras = [
+      [['seated', 'Сидя'], ['standing', 'Стоя'], ['drafting', 'Чертёж'], ['locked', settings.locked ? 'Снять замок' : 'Зафиксировать'],
+        ['personalSave', 'Запомнить доску'], ['personalLoad', 'Моя позиция'], ['trayLeft', 'Лоток: ' + (settings.trayLeft ? 'слева' : 'справа')],
+        ['clear', confirm ? 'Да, очистить' : 'Очистить…']],
+      [['hold', settings.hold ? 'Хват: держать' : 'Хват: кнопка'], ['calibrate', 'Запомнить хват'],
+        ['nib', settings.nib === 'chisel' ? 'Скошенное перо' : 'Круглое перо'], ['clearPractice', 'Стереть пробу']],
+      [['directional', settings.directional ? 'По контроллеру' : 'По взгляду'],
+        ['freeze', settings.freeze ? 'Стоп при письме' : 'Ходьба при письме'],
+        ['resetPlacement', 'Сброс положения']],
+      [['magnetic', settings.magnetic ? 'Магниты: сетка' : 'Магниты: свободно']]
+    ][page];
+    buttons.push(...extras.map(([id, label], i) => ({id, label, x: 28 + i % 2 * 280,
+      y: (page === 3 ? 350 : 770) + Math.floor(i / 2) * 77, w: 264, h: 66})),
       {id: 'home', label: 'К доске', x: 28, y: 1103, w: 264, h: 85},
       {id: 'settings', label: 'Назад', x: 308, y: 1103, w: 264, h: 85}
     );
-    return buttons;
+    if (page === 3) buttons.push(...[30, 45, 60, 90, 120].map((value, i) =>
+      ({id: 'anglePreset:' + value, label: value + '°', x: 28 + i * 109, y: 460, w: 104, h: 65})));
+    return [...tabs, ...buttons];
   }
   const entries = Object.entries(colors);
   const buttons = entries.map(([id, color], i) => ({
@@ -127,6 +154,8 @@ export function paletteButtons(colors, protractor, settingsOpen, settings) {
   buttons.push(
     {id: 'settings', label: '⚙', x: 481, y: 22, w: 91, h: 82},
     {id: 'marker', label: 'Взять / убрать маркер', x: 28, y: protractor ? 522 : 858, w: 544, h: protractor ? 48 : 82},
+    {id: 'sponge', label: 'Губка', x: 28, y: 964, w: 264, h: 88},
+    {id: 'return', label: 'Вернуть', x: 308, y: 964, w: 264, h: 88},
     {id: 'eraser', label: 'Ластик', x: 28, y: 310, w: 264, h: 92},
     {id: 'ruler', label: 'Линейка', x: 308, y: 310, w: 264, h: 92},
     {id: 'protractor', label: 'Транспортир', x: 28, y: 420, w: 544, h: 92},
@@ -135,9 +164,8 @@ export function paletteButtons(colors, protractor, settingsOpen, settings) {
   );
   if (protractor) {
     shapes.forEach(([id, label], i) => {
-      const short = i < 3;
-      const row = short ? 0 : 1 + Math.floor((i - 3) / 3);
-      const col = short ? i : (i - 3) % 3;
+      const row = Math.floor(i / 3);
+      const col = i % 3;
       buttons.push({id: 'shape:' + id, label, x: 28 + 184 * col, y: 623 + 116 * row, w: 176, h: 100});
     });
   }
@@ -195,7 +223,7 @@ export function paintPalette(ctx, buttons, active, hover, protractor, ruler, con
   } else if (protractor) {
     ctx.fillText('Фигуры и углы', 28, 595);
     ctx.font = '25px sans-serif';
-    ctx.fillText('Наведи на доску и нажми триггер', 28, 1013, 544);
+    ctx.fillText('Хват второй рукой меняет размер и угол', 28, 921, 544);
   } else if (ruler) {
     ctx.fillText('Потяни за круглый магнит', 28, 592, 544);
     ctx.fillText('Веди маркер рядом с кромкой', 28, 650, 544);
@@ -205,8 +233,19 @@ export function paintPalette(ctx, buttons, active, hover, protractor, ruler, con
   }
 }
 
-export function paintGuide(ctx, ruler, heldEnd, previews, color) {
+export function paintGuide(ctx, ruler, heldEnd, previews, color, calibration, boardMeters) {
   ctx.clearRect(0, 0, boardWidth, boardHeight);
+  if (calibration) {
+    ctx.beginPath();
+    ctx.arc(boardWidth * 0.5, boardHeight * 0.53, 19, 0, Math.PI * 2);
+    ctx.strokeStyle = '#be7030';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    ctx.fillStyle = '#453529';
+    ctx.font = 'bold 34px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Совмести наконечник с меткой и нажми триггер', boardWidth * 0.5, boardHeight * 0.62);
+  }
   if (ruler) {
     // Draw the body to one side of the working edge so ink remains visible.
     const [[x, y], [bx, by]] = ruler;
@@ -215,8 +254,6 @@ export function paintGuide(ctx, ruler, heldEnd, previews, color) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle);
-    ctx.fillStyle = 'rgba(221, 176, 63, 0.36)';
-    ctx.fillRect(0, 0, distance, 74);
     ctx.strokeStyle = '#65481a';
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -228,6 +265,14 @@ export function paintGuide(ctx, ruler, heldEnd, previews, color) {
       ctx.lineTo(dx, i % 3 === 0 ? 26 : 14);
     }
     ctx.stroke();
+    if (heldEnd !== null) {
+      ctx.fillStyle = '#65481a';
+      ctx.font = 'bold 28px sans-serif';
+      ctx.textAlign = 'center';
+      const degrees = Math.abs(Math.round(angle * 180 / Math.PI));
+      const centimeters = Math.round(distance * boardMeters * 100 / boardWidth);
+      ctx.fillText(centimeters + ' см · ' + degrees + '°', distance / 2, 55);
+    }
     ctx.restore();
     if (heldEnd !== null) {
       ctx.fillStyle = 'rgba(67, 94, 81, 0.42)';
@@ -261,16 +306,16 @@ export function paintGuide(ctx, ruler, heldEnd, previews, color) {
 }
 
 function paintFigurePreview(ctx, preview, color) {
-  if (!preview.closed) {
+  if (preview.protractor) {
     ctx.save();
     ctx.translate(...preview.anchor);
-    ctx.fillStyle = 'rgba(87, 136, 121, 0.25)';
+    ctx.rotate(preview.angle);
+    ctx.scale(preview.scale, preview.scale);
     ctx.strokeStyle = 'rgba(43, 94, 76, 0.70)';
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.arc(0, 0, 161, Math.PI, 2 * Math.PI);
     ctx.closePath();
-    ctx.fill();
     ctx.stroke();
     ctx.beginPath();
     for (let degree = 0; degree <= 180; degree += 10) {
