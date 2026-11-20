@@ -38,6 +38,7 @@ export function loadSettings() {
       settings.personal = Object.fromEntries(placementKeys.map(name => [name, clamp(stored.personal[name], ...limits[name])]));
     }
     if (stored?.nib === 'chisel') settings.nib = 'chisel';
+    if (stored?.introduced === true) settings.introduced = true;
     if (typeof stored?.rulerVisible === 'boolean') settings.rulerVisible = stored.rulerVisible;
     const ruler = stored?.ruler;
     if (Array.isArray(ruler) && ruler.length === 2 && ruler.every(point =>
@@ -115,10 +116,11 @@ export function contactPoint(panel, tip, previous, resistance, tolerance = 0.008
   if (length(delta) < 0.00022) return {...previous, restart: false, delta: [0, 0]};
   if (length(delta) > 0.14) return {raw, ink: raw, delta: null, restart: true};
   const bend = previous.delta && dot(delta, previous.delta) < 0.45 * length(delta) * length(previous.delta);
-  const follow = resistance ? clamp(0.72 - resistance * 0.135 + length(delta) * 33 + (bend ? 0.38 : 0), 0.12, 1) : 1;
+  const follow = resistance ? clamp(0.78 - resistance * 0.13 + length(delta) * 40 + (bend ? 0.48 : 0), 0.18, 1) : 1;
   let ink = add(previous.ink, mul(sub(raw, previous.ink), follow));
   const gap = sub(raw, ink);
-  if (length(gap) > 0.004) ink = sub(raw, mul(unit(gap), 0.004));
+  const maxLag = 0.0035 / Math.max(panel.width, panel.height);
+  if (length(gap) > maxLag) ink = sub(raw, mul(unit(gap), maxLag));
   return {raw, ink, delta};
 }
 

@@ -84,6 +84,8 @@ export function makeRenderer(gl) {
   const ink = createTexture();
   const interfaceTexture = createTexture();
   const allocated = new Set();
+  const inkPatch = document.createElement('canvas');
+  const patchContext = inkPatch.getContext('2d');
   const vertices = new Float32Array(24);
   const corners = [[0, 0], [1, 0], [0, 1], [1, 1]];
 
@@ -108,6 +110,20 @@ export function makeRenderer(gl) {
 
   return {
     ink, interfaceTexture, empty, createTexture, update, draw,
+    updateInk(canvas, rect) {
+      if (!allocated.has(ink) || !rect) {
+        update(ink, canvas);
+        return;
+      }
+      const [x, y, right, bottom] = rect;
+      const width = right - x, height = bottom - y;
+      if (inkPatch.width !== width) inkPatch.width = width;
+      if (inkPatch.height !== height) inkPatch.height = height;
+      patchContext.clearRect(0, 0, width, height);
+      patchContext.drawImage(canvas, x, y, width, height, 0, 0, width, height);
+      gl.bindTexture(gl.TEXTURE_2D, ink);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, gl.RGBA, gl.UNSIGNED_BYTE, inkPatch);
+    },
     drawDecal(panel, texture, background, depth) {
       gl.depthMask(false);
       draw(panel, texture, background, 0, depth);

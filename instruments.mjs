@@ -43,7 +43,7 @@ export const shapes = [
   ['square', 'Квадрат'], ['triangle', 'Треугольник'], ['arc', 'Дуга'], ['angle', 'Угол']
 ];
 
-export function figure(id, pointer, scale = 1, rotation = 0, degrees = 60) {
+export function figure(id, pointer, scale = 1, rotation = 0, degrees = 60, fixed = false) {
   let outline;
   let closed = true;
   const radians = (id === 'angle' ? degrees : Number(id)) * Math.PI / 180;
@@ -76,8 +76,10 @@ export function figure(id, pointer, scale = 1, rotation = 0, degrees = 60) {
   outline = outline.map(([x, y]) => [x * cosine - y * sine, x * sine + y * cosine]);
   const xs = outline.map(([x]) => x);
   const ys = outline.map(([, y]) => y);
-  const anchor = [clamp(pointer[0], 12 - Math.min(...xs), boardWidth - 12 - Math.max(...xs)),
+  const anchor = fixed ? pointer : [clamp(pointer[0], 12 - Math.min(...xs), boardWidth - 12 - Math.max(...xs)),
     clamp(pointer[1], 12 - Math.min(...ys), boardHeight - 12 - Math.max(...ys))];
-  return {points: outline.map(point => add(point, anchor)), anchor, closed, angle: rotation, scale,
+  const points = outline.map(point => add(point, anchor));
+  const valid = points.every(([x, y]) => x >= 12 && x <= boardWidth - 12 && y >= 12 && y <= boardHeight - 12);
+  return {points, valid, anchor, closed, angle: rotation, scale,
     protractor: id === 'angle' || id === 'arc' || Number.isFinite(Number(id))};
 }

@@ -1,5 +1,5 @@
 import { add, at, cross, forward, length, mul, sub, unit, xyz } from './geometry.mjs';
-import { boardHeight, boardWidth } from './instruments.mjs?v=5';
+import { boardHeight, boardWidth } from './instruments.mjs?v=8';
 
 const clear = [0, 0, 0, 0];
 export const wristActions = [['home', 'К доске'], ['settings', 'Настройки'],
@@ -95,6 +95,18 @@ export function drawSphere(renderer, [x, y, z], radius, color) {
   renderer.drawSolid(mesh, color);
 }
 
+export function drawFootprint(renderer, surface, points, color) {
+  const outline = [];
+  for (let i = 0; i < points.length; i++) {
+    const a = at(surface, ...points[i], 0.006), b = at(surface, ...points[(i + 1) % points.length], 0.006);
+    const edge = sub(b, a);
+    if (length(edge) < 0.001) continue;
+    const side = mul(unit(cross(edge, surface.normal)), 0.001);
+    outline.push(sub(a, side), add(a, side), add(b, side), sub(a, side), add(b, side), sub(b, side));
+  }
+  renderer.drawSolid(vertices(outline), color);
+}
+
 export function drawBox(renderer, center, axes, size, color) {
   const faces = [];
   for (let i = 0; i < 3; i++) {
@@ -113,53 +125,62 @@ function pointOnBoard(surface, [x, y], depth) {
   return at(surface, x / boardWidth, y / boardHeight, depth);
 }
 
+function drawSlab(renderer, surface, outline, color, edge, bottom, top) {
+  const front = outline.map(point => pointOnBoard(surface, point, top));
+  const back = outline.map(point => pointOnBoard(surface, point, bottom));
+  const face = [], wall = [];
+  for (let i = 1; i < front.length - 1; i++) face.push(front[0], front[i], front[i + 1]);
+  for (let i = 0; i < front.length; i++) {
+    const j = (i + 1) % front.length;
+    wall.push(front[i], back[i], back[j], front[i], back[j], front[j]);
+  }
+  renderer.drawSolid(vertices(face), color);
+  renderer.drawSolid(vertices(wall), edge);
+}
+
 export function drawRuler(renderer, surface, ruler) {
-  const front = [0.99, 0.79, 0.39, 0.33];
   const [a, b] = ruler;
-  const edge = sub(b, a);
-  const across = mul(unit([-edge[1], edge[0]]), 74);
-  const corners = [a, b, add(b, across), add(a, across)];
-  renderer.drawSolid(vertices([0, 1, 2, 0, 2, 3].map(i => pointOnBoard(surface, corners[i], 0.017))), front);
-  const rim = [0, 1, 1, 2, 2, 3, 3, 0].flatMap((i, n, ids) => {
-    if (n % 2) return [];
-    const j = ids[n + 1];
-    const a = pointOnBoard(surface, corners[i], 0.006), b = pointOnBoard(surface, corners[j], 0.006);
-    const c = pointOnBoard(surface, corners[j], 0.017), d = pointOnBoard(surface, corners[i], 0.017);
-    return [a, b, c, a, c, d];
-  });
-  renderer.drawSolid(vertices(rim), [0.86, 0.62, 0.30, 0.55]);
-  ruler.forEach(end => {
-    const origin = pointOnBoard(surface, end, 0.014);
-    const points = [];
-    const radius = surface.width * 29 / boardWidth;
-    for (let n = 0; n < 14; n++) {
-      const ring = (i, depth) => {
-        const phase = i * Math.PI / 7;
-        return add(add(origin, mul(surface.normal, depth)), add(mul(surface.right, radius * Math.cos(phase)),
-          mul(surface.down, radius * Math.sin(phase))));
-      };
-      points.push(ring(n, 0), ring(n + 1, 0), ring(n, 0.018), ring(n, 0.018), ring(n + 1, 0), ring(n + 1, 0.018));
-    }
-    renderer.drawSolid(vertices(points), [0.61, 0.37, 0.12, 1]);
-  });
+  const along = unit(sub(b, a));
+  const distance = length(sub(b, a));
+  const side = [-along[1], along[0]];
+  const point = (x, y) => add(a, add(mul(along, x), mul(side, y)));
+  const outline = [[-15, 4], [distance + 15, 4], [distance + 25, 14], [distance + 25, 47],
+    [distance + 15, 57], [-15, 57], [-25, 47], [-25, 14]].map(pair => point(...pair));
+  drawSlab(renderer, surface, outline, [0.43, 0.68, 0.77, 0.21], [0.15, 0.35, 0.44, 0.68], 0.008, 0.017);
+  const rail = [[-15, 49], [distance + 15, 49], [distance + 10, 55], [-10, 55]].map(pair => point(...pair));
+  drawSlab(renderer, surface, rail, [0.18, 0.39, 0.47, 0.85], [0.24, 0.47, 0.53, 1], 0.017, 0.020);
+  for (const end of ruler) {
+    const ring = radius => Array.from({length: 20}, (_, i) => {
+      const angle = i * Math.PI / 10;
+      return add(end, [Math.cos(angle) * radius, Math.sin(angle) * radius]);
+    });
+    drawSlab(renderer, surface, ring(25), [0.20, 0.32, 0.37, 1], [0.36, 0.48, 0.53, 1], 0.006, 0.025);
+    drawSlab(renderer, surface, ring(19), [0.78, 0.85, 0.85, 1], [0.53, 0.61, 0.63, 1], 0.025, 0.028);
+    drawSlab(renderer, surface, ring(11), [0.24, 0.45, 0.53, 1], [0.40, 0.62, 0.69, 1], 0.028, 0.031);
+  }
 }
 
 export function drawProtractor(renderer, surface, anchor, angle, scale) {
-  const center = pointOnBoard(surface, anchor, 0.017);
-  const points = [], sides = [];
-  for (let i = 0; i < 32; i++) {
-    const ring = (n, height) => {
-      const phase = n * Math.PI / 32;
-      const radius = surface.width * 160 / boardWidth * scale;
-      return add(add(center, mul(surface.normal, height)),
-        add(mul(surface.right, radius * Math.cos(angle - phase)), mul(surface.down, radius * Math.sin(angle - phase))));
-    };
-    const a = ring(i, 0), b = ring(i + 1, 0), c = ring(i + 1, 0.008), d = ring(i, 0.008);
-    points.push(center, a, b);
-    sides.push(a, b, c, a, c, d);
+  const segment = (i, radius) => {
+    const phase = angle - i * Math.PI / 42;
+    return add(anchor, [radius * Math.cos(phase) * scale, radius * Math.sin(phase) * scale]);
+  };
+  const face = [], rim = [], inner = [];
+  for (let i = 0; i < 42; i++) {
+    const a = segment(i, 160), b = segment(i + 1, 160);
+    const c = segment(i + 1, 110), d = segment(i, 110);
+    face.push(a, b, c, a, c, d);
+    const e = segment(i, 154), f = segment(i + 1, 154);
+    rim.push(a, b, f, a, f, e);
+    inner.push(d, c, segment(i + 1, 114), d, segment(i + 1, 114), segment(i, 114));
   }
-  renderer.drawSolid(vertices(points), [0.44, 0.75, 0.66, 0.27]);
-  renderer.drawSolid(vertices(sides), [0.36, 0.70, 0.59, 0.82]);
+  renderer.drawSolid(vertices(face.map(point => pointOnBoard(surface, point, 0.017))), [0.52, 0.74, 0.75, 0.24]);
+  renderer.drawSolid(vertices(rim.map(point => pointOnBoard(surface, point, 0.020))), [0.24, 0.49, 0.55, 0.92]);
+  renderer.drawSolid(vertices(inner.map(point => pointOnBoard(surface, point, 0.020))), [0.38, 0.64, 0.67, 0.70]);
+  const across = mul([-Math.sin(angle), Math.cos(angle)], 5 * scale);
+  const left = segment(42, 155), right = segment(0, 155);
+  drawSlab(renderer, surface, [sub(left, across), sub(right, across), add(right, across), add(left, across)],
+    [0.37, 0.63, 0.66, 0.58], [0.22, 0.48, 0.54, 0.8], 0.010, 0.019);
 }
 
 export function drawVignette(renderer, texture, pose, strength, view) {

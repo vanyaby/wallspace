@@ -1,6 +1,6 @@
 import { add, at, cross, forward, length, mul, unit, xyz } from './geometry.mjs';
-import { boardHeight, boardWidth, magnetReach, magneticStep, shapes } from './instruments.mjs?v=5';
-import { rotateY } from './workshop.mjs?v=7';
+import { boardHeight, boardWidth, magneticStep, shapes } from './instruments.mjs?v=8';
+import { rotateY } from './workshop.mjs?v=8';
 
 export const paletteWidth = 600;
 export const paletteHeight = 1260;
@@ -124,8 +124,8 @@ export const adjustments = [
 
 export function paletteButtons(colors, protractor, settingsOpen, settings, page = 0, confirm = false, ready = false) {
   if (settingsOpen) {
-    const tabs = ['Доска', 'Перо', 'Ходьба', 'Геометрия'].map((label, i) =>
-      ({id: 'page:' + i, label, x: 22 + i * 141, y: 96, w: 134, h: 58}));
+    const tabs = ['Доска', 'Перо', 'Ходьба', 'Фигуры', 'Файл'].map((label, i) =>
+      ({id: 'page:' + i, label, x: 22 + i * 112, y: 96, w: 106, h: 58}));
     const buttons = adjustments.filter(([, , , , tab]) => page === tab).flatMap(([id, label, , unit, , names], row) => {
       const y = 170 + row * 74;
       const value = names?.[settings[id]] ?? (id === 'turn' && !settings.turn ? 'Плавно' : Number(settings[id].toFixed(2)) + unit);
@@ -143,7 +143,7 @@ export function paletteButtons(colors, protractor, settingsOpen, settings, page 
       [['directional', settings.directional ? 'По контроллеру' : 'По взгляду'],
         ['freeze', settings.freeze ? 'Стоп при письме' : 'Ходьба при письме'],
         ['resetPlacement', 'Сброс положения']],
-      [['magnetic', settings.magnetic ? 'Магниты: сетка' : 'Магниты: свободно']]
+      [['magnetic', settings.magnetic ? 'Магниты: сетка' : 'Магниты: свободно']], []
     ][page];
     buttons.push(...extras.map(([id, label], i) => ({id, label, x: 28 + i % 2 * 280,
       y: (page === 3 ? 350 : 770) + Math.floor(i / 2) * 77, w: 264, h: 66})),
@@ -152,6 +152,12 @@ export function paletteButtons(colors, protractor, settingsOpen, settings, page 
     );
     if (page === 3) buttons.push(...[30, 45, 60, 90, 120].map((value, i) =>
       ({id: 'anglePreset:' + value, label: value + '°', x: 28 + i * 109, y: 460, w: 104, h: 65})));
+    if (page === 4) buttons.push(
+      {id: 'save', label: 'Сохранить', x: 28, y: 198, w: 264, h: 84},
+      {id: 'export', label: 'Подготовить PNG', x: 308, y: 198, w: 264, h: 84},
+      {id: 'restorePrevious', label: 'Прошлый черновик', x: 28, y: 306, w: 544, h: 84},
+      {id: 'restoreClear', label: 'Вернуть доску до очистки', x: 28, y: 414, w: 544, h: 84},
+      {id: 'restoreCurrent', label: 'Последняя резервная копия', x: 28, y: 522, w: 544, h: 84});
     return [...tabs, ...buttons];
   }
   const entries = Object.entries(colors);
@@ -163,8 +169,10 @@ export function paletteButtons(colors, protractor, settingsOpen, settings, page 
     {id: 'ruler', label: 'Линейка', x: 28, y: 310, w: 264, h: 92},
     {id: 'protractor', label: 'Фигуры', x: 308, y: 310, w: 264, h: 92},
     {id: 'return', label: 'На лоток', x: 28, y: 964, w: 264, h: 88},
-    {id: 'undo', label: 'Отменить', x: 28, y: 1100, w: 264, h: 94},
-    {id: 'exit', label: 'Выйти', x: 308, y: 1100, w: 264, h: 94}
+    {id: 'home', label: 'К доске', x: 308, y: 964, w: 264, h: 88},
+    {id: 'undo', label: 'Отмена', x: 28, y: 1084, w: 169, h: 88},
+    {id: 'redo', label: 'Повтор', x: 216, y: 1084, w: 169, h: 88},
+    {id: 'exit', label: 'Выйти', x: 403, y: 1084, w: 169, h: 88}
   );
   if (protractor) {
     if (ready) buttons.push(
@@ -186,7 +194,7 @@ export function buttonAt(buttons, [u, v]) {
     y >= button.y && y <= button.y + button.h);
 }
 
-export function paintPalette(ctx, buttons, active, hover, protractor, ruler, controllersReady, settingsOpen) {
+export function paintPalette(ctx, buttons, active, hover, protractor, ruler, controllersReady, settingsOpen, status) {
   ctx.fillStyle = '#182625';
   ctx.fillRect(0, 0, paletteWidth, paletteHeight);
   ctx.textBaseline = 'middle';
@@ -222,6 +230,9 @@ export function paintPalette(ctx, buttons, active, hover, protractor, ruler, con
     }
   }
   ctx.textAlign = 'left';
+  ctx.fillStyle = status.error ? '#ffd0bc' : '#b8d9c8';
+  ctx.font = '25px sans-serif';
+  ctx.fillText(status.text, 28, 1220, 544);
   ctx.fillStyle = '#c6d8cc';
   ctx.font = '30px sans-serif';
   if (settingsOpen) return;
@@ -239,7 +250,7 @@ export function paintPalette(ctx, buttons, active, hover, protractor, ruler, con
   }
 }
 
-export function paintGuide(ctx, ruler, heldEnd, previews, color, calibration, boardMeters) {
+export function paintGuide(ctx, ruler, heldEnd, previews, color, calibration, boardMeters, snapped, onboarding) {
   ctx.clearRect(0, 0, boardWidth, boardHeight);
   if (calibration) {
     ctx.beginPath();
@@ -252,6 +263,17 @@ export function paintGuide(ctx, ruler, heldEnd, previews, color, calibration, bo
     ctx.textAlign = 'center';
     ctx.fillText('Совмести наконечник с меткой и нажми триггер', boardWidth * 0.5, boardHeight * 0.62);
   }
+  if (onboarding === 'point' && !calibration) {
+    ctx.beginPath();
+    ctx.arc(boardWidth * 0.5, boardHeight * 0.60, 15, 0, Math.PI * 2);
+    ctx.strokeStyle = '#266978';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.font = '27px sans-serif';
+    ctx.fillStyle = '#2b4c55';
+    ctx.fillText('Коснись доски наконечником', boardWidth * 0.5, boardHeight * 0.68);
+  }
   if (ruler) {
     // Draw the body to one side of the working edge so ink remains visible.
     const [[x, y], [bx, by]] = ruler;
@@ -260,24 +282,30 @@ export function paintGuide(ctx, ruler, heldEnd, previews, color, calibration, bo
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle);
-    ctx.strokeStyle = '#65481a';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = snapped ? '#218b9a' : '#284e5c';
+    ctx.lineWidth = snapped ? 5 : 2;
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(distance, 0);
-    for (let i = 1; i * 20 < distance; i++) {
-      const dx = i * 20;
-      ctx.moveTo(dx, 1);
-      ctx.lineTo(dx, i % 3 === 0 ? 26 : 14);
+    const cm = boardWidth / (boardMeters * 100);
+    const spacing = cm * 2;
+    for (let i = 1; i * spacing < distance; i++) {
+      const dx = i * spacing;
+      ctx.moveTo(dx, 8);
+      ctx.lineTo(dx, i % 5 === 0 ? 26 : 17);
     }
     ctx.stroke();
+    ctx.fillStyle = '#284e5c';
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center';
+    for (let i = 5; i * spacing < distance - 30; i += 5) ctx.fillText(String(i * 2), i * spacing, 40);
     if (heldEnd !== null) {
-      ctx.fillStyle = '#65481a';
+      ctx.fillStyle = '#284e5c';
       ctx.font = 'bold 28px sans-serif';
       ctx.textAlign = 'center';
       const degrees = Math.abs(Math.round(angle * 180 / Math.PI));
       const centimeters = Math.round(distance * boardMeters * 100 / boardWidth);
-      ctx.fillText(centimeters + ' см · ' + degrees + '°', distance / 2, 55);
+      ctx.fillText(centimeters + ' см · ' + degrees + '°', distance / 2, 88);
     }
     ctx.restore();
     if (heldEnd !== null) {
@@ -290,14 +318,14 @@ export function paintGuide(ctx, ruler, heldEnd, previews, color, calibration, bo
     }
     ruler.forEach(([cx, cy], index) => {
       ctx.beginPath();
-      ctx.arc(cx, cy, magnetReach - 7, 0, Math.PI * 2);
-      ctx.fillStyle = heldEnd === index ? '#fbecaa' : '#e4ac44';
-      ctx.fill();
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = '#65481a';
-      ctx.stroke();
-      ctx.fillStyle = '#493612';
-      ctx.font = 'bold 30px sans-serif';
+      if (heldEnd === index) {
+        ctx.arc(cx, cy, 27, 0, Math.PI * 2);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#48a6ab';
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#edf6f8';
+      ctx.font = 'bold 16px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(index + 1), cx, cy);
@@ -317,7 +345,7 @@ function paintFigurePreview(ctx, preview, color) {
     ctx.translate(...preview.anchor);
     ctx.rotate(preview.angle);
     ctx.scale(preview.scale, preview.scale);
-    ctx.strokeStyle = 'rgba(43, 94, 76, 0.70)';
+    ctx.strokeStyle = '#375f66';
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.arc(0, 0, 161, Math.PI, 2 * Math.PI);
@@ -331,17 +359,17 @@ function paintFigurePreview(ctx, preview, color) {
       ctx.lineTo(160 * Math.cos(rad), -160 * Math.sin(rad));
     }
     ctx.stroke();
-    ctx.fillStyle = '#34584d';
-    ctx.font = '18px sans-serif';
+    ctx.fillStyle = '#284e58';
+    ctx.font = '14px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (let degree = 0; degree <= 180; degree += 30) {
       const rad = degree * Math.PI / 180;
-      ctx.fillText(String(degree), 123 * Math.cos(rad), -123 * Math.sin(rad) - 7);
+      ctx.fillText(String(degree), 128 * Math.cos(rad), -128 * Math.sin(rad) - 2);
     }
     ctx.restore();
   }
-  ctx.strokeStyle = color;
+  ctx.strokeStyle = preview.valid ? color : '#bd392e';
   ctx.lineWidth = 7;
   ctx.setLineDash([14, 9]);
   ctx.beginPath();
@@ -349,4 +377,11 @@ function paintFigurePreview(ctx, preview, color) {
   for (const point of preview.points.slice(1)) ctx.lineTo(...point);
   if (preview.closed) ctx.closePath();
   ctx.stroke();
+  if (!preview.valid) {
+    ctx.setLineDash([]);
+    ctx.font = 'bold 23px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#a02924';
+    ctx.fillText('Фигура выходит за край', boardWidth / 2, boardHeight - 33);
+  }
 }
