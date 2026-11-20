@@ -56,11 +56,14 @@ export function makeRenderer(gl) {
   const backingColor = gl.getUniformLocation(program, 'uBacking');
   const borderWidth = gl.getUniformLocation(program, 'uBorder');
   gl.enable(gl.BLEND);
+  gl.enable(gl.DEPTH_TEST);
   gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-  gl.clearColor(0, 0, 0, 0);
+  gl.clearColor(0.065, 0.10, 0.11, 1);
 
+  const textures = [];
   function createTexture() {
     const texture = gl.createTexture();
+    textures.push(texture);
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -97,7 +100,7 @@ export function makeRenderer(gl) {
   }
 
   return {
-    ink, interfaceTexture, empty, update, draw,
+    ink, interfaceTexture, empty, createTexture, update, draw,
     begin(layer) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -111,7 +114,7 @@ export function makeRenderer(gl) {
       return true;
     },
     destroy() {
-      for (const texture of [empty, ink, interfaceTexture]) gl.deleteTexture(texture);
+      for (const texture of textures) gl.deleteTexture(texture);
       gl.deleteBuffer(buffer);
       gl.deleteProgram(program);
     }

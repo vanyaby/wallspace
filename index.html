@@ -4,25 +4,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#222537">
-  <title>WALLSPACE — доска для Meta Quest</title>
-  <link rel="stylesheet" href="./style.css">
-  <script type="module" src="./app.mjs?v=2"></script>
+  <title>WALLSPACE — VR-доска для Meta Quest</title>
+  <link rel="stylesheet" href="./style.css?v=3">
+  <script type="module" src="./app.mjs?v=3"></script>
 </head>
 <body>
   <main>
     <header class="masthead">
       <div>
         <h1>WALLSPACE</h1>
-        <p>Доска для комнаты и экрана</p>
+        <p>VR-мастерская для одного</p>
       </div>
-      <button id="mr" class="primary" disabled>Войти в MR <span aria-hidden="true">↗</span></button>
+      <button id="vr" class="primary" disabled>Войти в VR <span aria-hidden="true">↗</span></button>
     </header>
     <section class="desk" aria-label="Доска для рисования">
       <div class="toolbar">
         <div role="group" aria-label="Цвет">
+          <button class="swatch" data-ink="black" aria-label="Чёрный" aria-pressed="false"></button>
           <button class="swatch" data-ink="indigo" aria-label="Индиго" aria-pressed="true"></button>
           <button class="swatch" data-ink="red" aria-label="Красный" aria-pressed="false"></button>
           <button class="swatch" data-ink="teal" aria-label="Бирюзовый" aria-pressed="false"></button>
+          <button class="swatch" data-ink="orange" aria-label="Оранжевый" aria-pressed="false"></button>
         </div>
         <div class="tools" role="group" aria-label="Инструменты">
           <button id="eraser" aria-pressed="false">Ластик</button>
@@ -31,16 +33,16 @@
         </div>
       </div>
       <div class="paper"><canvas id="ink" width="1440" height="960" aria-label="Полотно для рисования мышью или касанием"></canvas></div>
-      <footer><span id="xr-status" role="status">Проверяем доступность MR…</span><span id="save-status" role="status">Хранение на этом устройстве</span></footer>
+      <footer><span id="xr-status" role="status">Проверяем доступность VR…</span><span id="save-status" role="status">Хранение на этом устройстве</span></footer>
     </section>
     <details>
-      <summary>Как рисовать на стене в Meta Quest</summary>
+      <summary>Управление в Meta Quest</summary>
       <ol>
-        <li>Открой эту страницу в браузере гарнитуры. Включи отслеживание рук, отложи контроллеры и нажми «Войти в MR».</li>
-        <li>Прижми указательный палец к верхнему левому углу и задержи его. Другой рукой укажи на «Записать точку» и сделай щипок. Повтори для верхнего правого и нижнего левого углов.</li>
-        <li>После третьей точки отведи руку от стены, затем веди указательным пальцем у поверхности. Чтобы выбрать инструмент, направь руку на кнопку над доской и сделай щипок.</li>
+        <li>Возьми контроллеры и нажми «Войти в VR». Наводи луч на доску и удерживай триггер, чтобы рисовать или стирать.</li>
+        <li>Включи «Линейку». Потяни за круглый магнит на любом конце, удерживая триггер. Магнит встанет на ближайшую точку сетки. Начни штрих возле кромки, чтобы провести прямую.</li>
+        <li>Открой «Транспортир», выбери фигуру или угол, наведи луч на доску и нажми триггер. До нажатия виден контур.</li>
       </ol>
-      <p>Рисунок сохранится в браузере. Стену нужно размечать заново при каждом входе в MR.</p>
+      <p>Рисунок сохраняется в этом браузере. PNG можно скачать после выхода из VR.</p>
     </details>
   </main>
 </body>

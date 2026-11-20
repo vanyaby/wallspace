@@ -1,12 +1,12 @@
-import { enterMR } from './xr.mjs?v=2';
+import { enterVR } from './vr.mjs';
 
-const colors = {indigo: '#4946a6', red: '#c0314b', teal: '#007d72'};
+const colors = {black: '#263238', indigo: '#4946a6', red: '#c0314b', teal: '#007d72', orange: '#b65a08'};
 const canvas = document.querySelector('#ink');
 const context = canvas.getContext('2d', {willReadFrequently: true});
 const undoButton = document.querySelector('#undo');
 const eraserButton = document.querySelector('#eraser');
 const colorButtons = [...document.querySelectorAll('[data-ink]')];
-const mrButton = document.querySelector('#mr');
+const vrButton = document.querySelector('#vr');
 const xrStatus = document.querySelector('#xr-status');
 const saveStatus = document.querySelector('#save-status');
 const storageKey = 'wallspace.ink.v1';
@@ -42,6 +42,12 @@ function selectTool(next) {
   }
 }
 
+function remember() {
+  undoStack.push(context.getImageData(0, 0, canvas.width, canvas.height));
+  if (undoStack.length > 8) undoStack.shift();
+  undoButton.disabled = false;
+}
+
 function stroke(u, v) {
   const x = u * canvas.width;
   const y = v * canvas.height;
@@ -57,14 +63,29 @@ function stroke(u, v) {
     context.lineTo(x, y);
     context.stroke();
   } else {
-    undoStack.push(context.getImageData(0, 0, canvas.width, canvas.height));
-    if (undoStack.length > 8) undoStack.shift();
-    undoButton.disabled = false;
+    remember();
     context.arc(x, y, width / 2, 0, 2 * Math.PI);
     context.fill();
   }
   previous = [x, y];
   revision++;
+}
+
+function stamp({points, closed}) {
+  endStroke();
+  remember();
+  context.globalCompositeOperation = 'source-over';
+  context.strokeStyle = colors[tool] ?? colors.indigo;
+  context.lineWidth = 14;
+  context.lineCap = 'round';
+  context.lineJoin = 'round';
+  context.beginPath();
+  context.moveTo(...points[0]);
+  for (const point of points.slice(1)) context.lineTo(...point);
+  if (closed) context.closePath();
+  context.stroke();
+  revision++;
+  queueSave();
 }
 
 function endStroke() {
@@ -139,35 +160,33 @@ document.querySelector('#export').addEventListener('click', () => {
   file.click();
 });
 
-const board = {canvas, colors, stroke, endStroke, undo, selectTool,
+const board = {canvas, colors, stroke, stamp, endStroke, undo, selectTool,
   get revision() { return revision; },
   get tool() { return tool; }};
 
 let supported = false;
 try {
-  supported = await navigator.xr?.isSessionSupported('immersive-ar');
+  supported = await navigator.xr?.isSessionSupported('immersive-vr');
 } catch {
   // The 2D board is available even when the browser cannot check WebXR.
 }
-mrButton.disabled = !supported;
-xrStatus.textContent = supported ? 'Режим смешанной реальности доступен' :
-  'Открой сайт в браузере Quest, чтобы войти в MR';
-mrButton.addEventListener('click', async () => {
-  mrButton.disabled = true;
-  xrStatus.textContent = 'Открываем режим MR…';
+vrButton.disabled = !supported;
+xrStatus.textContent = supported ? 'VR доступен · возьми контроллеры' :
+  'Открой сайт в браузере Quest, чтобы войти в VR';
+vrButton.addEventListener('click', async () => {
+  vrButton.disabled = true;
+  xrStatus.textContent = 'Открываем VR-мастерскую…';
   try {
-    await enterMR(board, () => {
-      mrButton.disabled = false;
-      xrStatus.textContent = 'Режим MR завершён';
+    await enterVR(board, () => {
+      vrButton.disabled = false;
+      xrStatus.textContent = 'Сеанс VR завершён';
     }, () => {
-      mrButton.disabled = false;
-      xrStatus.textContent = 'Сеанс MR прервался. Попробуй войти снова.';
+      vrButton.disabled = false;
+      xrStatus.textContent = 'Сеанс VR прервался. Попробуй войти снова.';
     });
   } catch (error) {
-    mrButton.disabled = false;
-    xrStatus.textContent = error.name === 'NotSupportedError'
-      ? 'Для MR нужно отслеживание рук. Проверь настройки Quest.'
-      : 'Не удалось войти в MR. Проверь отслеживание рук и попробуй снова.';
+    vrButton.disabled = false;
+    xrStatus.textContent = 'Не удалось открыть VR. Попробуй снова в браузере Quest.';
     console.error(error);
   }
 });

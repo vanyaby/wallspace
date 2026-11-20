@@ -7,21 +7,6 @@ export const cross = ([x, y, z], [a, b, c]) => [y * c - z * b, z * a - x * c, x 
 export const unit = a => mul(a, 1 / length(a));
 export const xyz = ({x, y, z}) => [x, y, z];
 
-export function makeWall(origin, topRight, bottomLeft, viewer) {
-  const horizontal = sub(topRight, origin);
-  const width = length(horizontal);
-  if (width < 0.25) return null;
-  const right = unit(horizontal);
-  const side = sub(bottomLeft, origin);
-  const vertical = sub(side, mul(right, dot(side, right)));
-  const height = length(vertical);
-  if (height < 0.2 || height / length(side) < 0.6) return null;
-  const down = unit(vertical);
-  const normal = cross(down, right);
-  if (down[1] >= 0 || dot(normal, sub(viewer, origin)) <= 0) return null;
-  return {origin, right, down, width, height, normal};
-}
-
 export function at(panel, u, v, depth = 0) {
   return add(panel.origin, add(mul(panel.right, u * panel.width),
     add(mul(panel.down, v * panel.height), mul(panel.normal, depth))));
