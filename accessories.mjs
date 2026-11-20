@@ -1,5 +1,5 @@
 import { add, at, cross, forward, length, mul, sub, unit, xyz } from './geometry.mjs';
-import { boardHeight, boardWidth } from './instruments.mjs';
+import { boardHeight, boardWidth } from './instruments.mjs?v=5';
 
 const clear = [0, 0, 0, 0];
 export const wristActions = [['home', 'К доске'], ['settings', 'Настройки'],

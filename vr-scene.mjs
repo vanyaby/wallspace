@@ -1,6 +1,6 @@
 import { add, at, cross, forward, length, mul, unit, xyz } from './geometry.mjs';
-import { boardHeight, boardWidth, magnetReach, magneticStep, shapes } from './instruments.mjs';
-import { rotateY } from './workshop.mjs';
+import { boardHeight, boardWidth, magnetReach, magneticStep, shapes } from './instruments.mjs?v=5';
+import { rotateY } from './workshop.mjs?v=5';
 
 export const paletteWidth = 600;
 export const paletteHeight = 1260;
