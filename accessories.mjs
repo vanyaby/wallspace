@@ -50,7 +50,7 @@ export function wristPanel(grip, view) {
   const sideways = cross([0, 1, 0], normal);
   const right = length(sideways) > 0.01 ? unit(sideways) : [1, 0, 0];
   const down = cross(right, normal);
-  return makePanel(add(position, add(mul(right, -0.145), [0, 0.21, 0])), right, down, 0.29, 0.24);
+  return makePanel(add(position, add(mul(right, -0.115), [0, 0.165, 0])), right, down, 0.23, 0.18);
 }
 
 export function paintWrist(ctx) {

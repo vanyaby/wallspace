@@ -2,11 +2,11 @@ import { add, at, cross, dot, forward, inside, length, mul, project, rayToPanel,
 import { boardHeight, boardWidth, figure, initialRuler, magnetReach, moveMagnet, moveRuler, projectToRuler } from './instruments.mjs?v=5';
 import { makeRenderer } from './renderer.mjs?v=5';
 import { adjustments, arrangeBoard, buttonAt, createRoom, drawPointer, paintGuide, paintPalette, paletteButtons,
-  paletteHeight, paletteWidth, renderRoom } from './vr-scene.mjs?v=5';
+  paletteHeight, paletteWidth, renderRoom } from './vr-scene.mjs?v=7';
 import { clamp, constrainWalk, contactPoint, controls, drawMarker, flat, limits, loadSettings, markerPose, offsetSpace,
-  placementKeys, pulse, rackPosition, rememberSettings, rotateY } from './workshop.mjs?v=5';
+  placementKeys, pulse, rackPosition, rememberSettings, rotateY } from './workshop.mjs?v=7';
 import { createSound, drawArc, drawBox, drawProtractor, drawRuler, drawSphere, drawVignette, makePanel, paintWrist,
-  teleportArc, wristActions, wristPanel } from './accessories.mjs?v=6';
+  teleportArc, wristActions, wristPanel } from './accessories.mjs?v=7';
 
 function makeCanvas(width, height) {
   const canvas = document.createElement('canvas');
@@ -28,7 +28,7 @@ function locate(frame, space, room, source) {
   if (palette) return {surface: room.palette, uv: palette, origin, direction};
   const board = rayToPanel(room.board, origin, direction);
   if (board) {
-    return {surface: room.board, uv: board, origin, direction, point: [board[0] * boardWidth, board[1] * boardHeight]};
+    return {surface: room.board, uv: board, origin, direction};
   }
   return {origin, direction};
 }
@@ -130,7 +130,7 @@ export async function enterVR(board, onEnd, onFailure) {
     let turnReady = true;
     let teleport = null;
     let teleportHeld = false;
-    let home = false;
+    let home = true;
     const heldTools = new Map();
     const hoveredPickups = new Map();
     let writingSource = null;
@@ -155,7 +155,7 @@ export async function enterVR(board, onEnd, onFailure) {
     let guideState = '';
 
     function refreshButtons() {
-      buttons = paletteButtons(board.colors, protractor, settingsOpen, settings, settingsPage, confirmClear);
+      buttons = paletteButtons(board.colors, protractor, settingsOpen, settings, settingsPage, confirmClear, Boolean(construction));
       paletteState = '';
     }
     refreshButtons();
@@ -171,7 +171,6 @@ export async function enterVR(board, onEnd, onFailure) {
     resetTrial();
 
     function stopDrag() {
-      if (drag?.type === 'ink') board.endStroke();
       if (drag?.type === 'magnet') {
         settings.ruler = ruler;
         rememberSettings(settings);
@@ -200,6 +199,7 @@ export async function enterVR(board, onEnd, onFailure) {
       displacement = [0, 0, 0];
       yaw = 0;
       lastTime = null;
+      home = true;
       teleport = null;
       teleportHeld = false;
       velocity = [0, 0, 0];
@@ -223,11 +223,6 @@ export async function enterVR(board, onEnd, onFailure) {
         settingsPage = 2;
       } else if (id.startsWith('page:')) {
         settingsPage = Number(id.slice(5));
-      } else if (id === 'marker' || id === 'sponge') {
-        const slot = id === 'sponge' ? 'sponge' : settings.nib === 'chisel' ? 'wide' : lastColor;
-        const item = rackTools().find(tool => tool.slot === slot);
-        if (heldTools.get(source)?.slot === slot) returnTool(source);
-        else takeTool(source, item, false);
       } else if (id === 'return') {
         heldTools.clear();
         protractor = false;
@@ -289,6 +284,15 @@ export async function enterVR(board, onEnd, onFailure) {
         if (protractor) board.selectTool(lastColor);
       } else if (id.startsWith('shape:')) {
         shape = id.slice(6);
+      } else if (id === 'figureCancel' || id === 'figureConfirm') {
+        if (id === 'figureConfirm' && construction) {
+          const {anchor, scale, rotation} = construction;
+          liftMarker();
+          board.selectTool(lastColor);
+          board.stamp(figure(shape, anchor, scale, rotation, settings.angle), settings.width);
+          pulse(source, settings.haptics * 0.065, 25);
+        }
+        construction = adjustFigure = null;
       } else {
         protractor = false;
         if (button.color) {
@@ -298,8 +302,6 @@ export async function enterVR(board, onEnd, onFailure) {
             if (writingSource === source) liftMarker();
             held.id = id;
           }
-        } else if (id === 'eraser' && heldTools.has(source)) {
-          returnTool(source);
         }
         if (writingSource) liftMarker();
         board.selectTool(id);
@@ -325,7 +327,7 @@ export async function enterVR(board, onEnd, onFailure) {
     }
 
     function spongeDock() {
-      return at(room.board, settings.trayLeft ? 0.18 : 0.82, 1.045, 0.13);
+      return room.spongeDock;
     }
 
     function rackTools() {
@@ -368,8 +370,8 @@ export async function enterVR(board, onEnd, onFailure) {
 
     function pickupTargets(rack) {
       return [...rack,
-        {slot: 'rulerHook', action: 'ruler', center: at(room.board, -0.13, 0.36, 0.065), height: 0.23},
-        {slot: 'protractorHook', action: 'protractor', center: at(room.board, -0.13, 0.63, 0.065), height: 0.08}];
+        {slot: 'rulerHook', action: 'ruler', center: room.rulerDock, height: 0.23},
+        {slot: 'protractorHook', action: 'protractor', center: room.protractorDock, height: 0.08}];
     }
 
     function pickupFor(source, grip, hit, items) {
@@ -398,10 +400,10 @@ export async function enterVR(board, onEnd, onFailure) {
       return aimed[0]?.item ?? null;
     }
 
-    function geometryGrab(source, handPoint, hit) {
+    function geometryGrab(source, point) {
+      if (!point) return false;
       if (protractor) {
-        const point = handPoint ?? hit?.point;
-        if (!point || !inside([point[0] / boardWidth, point[1] / boardHeight])) return false;
+        if (!inside([point[0] / boardWidth, point[1] / boardHeight])) return false;
         if (!construction?.source) {
           construction = {source, anchor: point, scale: construction?.scale ?? 1, rotation: construction?.rotation ?? 0};
         } else if (construction.source !== source && !adjustFigure) {
@@ -410,15 +412,14 @@ export async function enterVR(board, onEnd, onFailure) {
           adjustFigure = {source, distance: length(offset), bearing: Math.atan2(offset[1], offset[0]),
             scale: construction.scale, rotation: construction.rotation};
         }
+        refreshButtons();
         return true;
       }
       if (!rulerVisible || drag) return false;
-      const point = handPoint ?? hit?.point;
-      if (!point) return false;
       const mid = mul(add(...ruler), 0.5);
       const end = ruler.findIndex(magnet => length(sub(magnet, point)) <= magnetReach + 12);
       if (end < 0 && length(sub(mid, point)) > 70) return false;
-      drag = {source, mode: 'squeeze', type: 'magnet', end, origin: ruler, start: point, hand: Boolean(handPoint)};
+      drag = {source, mode: 'squeeze', type: 'magnet', end, origin: ruler, start: point};
       return true;
     }
 
@@ -469,8 +470,7 @@ export async function enterVR(board, onEnd, onFailure) {
           return;
         }
         if (drag?.source === source) return;
-        const handPoint = flatPoint(grip);
-        if ((handPoint || !held) && geometryGrab(source, handPoint, held ? null : hit)) return;
+        if (geometryGrab(source, flatPoint(grip))) return;
         if (grip) {
           const hand = xyz(grip.position);
           if (!drag && !settings.locked && length(sub(hand, room.hinge)) < 0.085) {
@@ -487,65 +487,23 @@ export async function enterVR(board, onEnd, onFailure) {
         if (held && !held.momentary) returnTool(source);
         return;
       }
-      if (drag?.source === source && drag.type !== 'magnet') return;
-      if (mode === 'select' && protractor && construction && (hit?.surface !== room.palette)) {
-        const {anchor, scale, rotation} = construction;
-        liftMarker();
-        board.stamp(figure(shape, anchor, scale, rotation, settings.angle), settings.width);
-        pulse(source, settings.haptics * 0.065, 25);
-        return;
-      }
-      if (!hit?.surface) return;
-      if (!hit.point) {
-        const button = buttonAt(buttons, hit.uv);
-        if (mode === 'select' && button) choose(button, source);
-        return;
-      }
-      const end = rulerVisible ? ruler.findIndex(magnet => length(sub(magnet, hit.point)) <= magnetReach) : -1;
-      if (end !== -1 && !drag && mode === 'select' && !protractor && board.tool !== 'eraser' && !heldTools.has(source)) {
-        drag = {source, mode, type: 'magnet', end, start: hit.point, origin: ruler};
-      } else if (mode === 'select' && protractor) {
-        liftMarker();
-        board.stamp(figure(shape, hit.point, 1, 0, settings.angle), settings.width);
-      } else if (mode === 'select' && !heldTools.has(source) && !drag) {
-        liftMarker();
-        const snap = rulerVisible && board.tool !== 'eraser' && projectToRuler(ruler, hit.point).distance <= 47;
-        drag = {source, mode, type: 'ink', snap, last: null};
-        continueDrag(hit);
-      }
+      if (mode !== 'select' || hit?.surface !== room.palette) return;
+      const button = buttonAt(buttons, hit.uv);
+      if (button) choose(button, source);
     }
 
-    function continueDrag(hit, handPoint) {
-      if (drag.type === 'magnet') {
-        const point = drag.hand ? handPoint : hit?.point;
-        if (!point) return;
-        const next = drag.end < 0 ? moveRuler(drag.origin,
-          add(mul(add(...drag.origin), 0.5), sub(point, drag.start)), settings.magnetic) :
-          moveMagnet(ruler, drag.end, point, settings.magnetic);
-        if (next.some((point, i) => length(sub(point, ruler[i])) > 0.1)) {
-          if (settings.magnetic) {
-            pulse(drag.source, settings.haptics * 0.06, 24);
-            sound?.play('click', settings.volume);
-          }
-          ruler = next;
+    function continueDrag(point) {
+      if (!point) return;
+      const next = drag.end < 0 ? moveRuler(drag.origin,
+        add(mul(add(...drag.origin), 0.5), sub(point, drag.start)), settings.magnetic) :
+        moveMagnet(ruler, drag.end, point, settings.magnetic);
+      if (next.some((point, i) => length(sub(point, ruler[i])) > 0.1)) {
+        if (settings.magnetic) {
+          pulse(drag.source, settings.haptics * 0.06, 24);
+          sound?.play('click', settings.volume);
         }
-        return;
+        ruler = next;
       }
-      if (!hit?.point) {
-        if (drag.type === 'ink') {
-          board.endStroke();
-          drag.last = null;
-        }
-        return;
-      }
-      const point = drag.snap ? projectToRuler(ruler, hit.point).point : hit.point;
-      if (drag.last) {
-        const movement = length(sub(point, drag.last));
-        if (movement < 0.5) return;
-        if (!drag.snap && movement > 270) board.endStroke();
-      }
-      board.stroke(point[0] / boardWidth, point[1] / boardHeight, board.tool === 'eraser' ? 54 : settings.width);
-      drag.last = point;
     }
 
     function end(event, mode) {
@@ -606,7 +564,7 @@ export async function enterVR(board, onEnd, onFailure) {
       if (home && canMove) {
         const point = at(room.board, 0.5, 0.5);
         const normal = flat(room.board.normal, mul(room.ahead, -1));
-        next = [point[0] + normal[0] * 0.95, eye[1], point[2] + normal[2] * 0.95];
+        next = [point[0] + normal[0] * 0.84, eye[1], point[2] + normal[2] * 0.84];
         const facing = flat(forward(pose.transform.orientation), room.ahead);
         homeTurn = Math.atan2(cross(facing, mul(normal, -1))[1], dot(facing, mul(normal, -1)));
         velocity = [0, 0, 0];
@@ -648,7 +606,7 @@ export async function enterVR(board, onEnd, onFailure) {
       const headAtBoard = project(room.board, eye);
       const throughBoard = headAtBoard && inside(headAtBoard) && headAtBoard[2] < 0.05 && headAtBoard[2] > -0.15;
       if (throughBoard) shadeAmount = Math.max(shadeAmount, 0.8);
-      const canWrite = !throughBoard && drag?.type !== 'ink' && drag?.type !== 'board';
+      const canWrite = !throughBoard && drag?.type !== 'board';
       const tools = hands.flatMap(({source, grip}) => {
         const tool = heldTools.get(source);
         if (!tool || !grip) return [];
@@ -785,15 +743,15 @@ export async function enterVR(board, onEnd, onFailure) {
           } else {
             stopDrag();
           }
-        } else if (drag) continueDrag(hits.find(input => input.source === drag.source)?.hit,
-          drag.hand ? flatPoint(gripPose(frame, drag.source), 0.27) : null);
+        } else if (drag?.type === 'magnet') {
+          continueDrag(flatPoint(gripPose(frame, drag.source), 0.27));
+        }
         if (construction?.source && !controllers.includes(construction.source)) {
           construction.source = null;
           adjustFigure = null;
         }
         if (construction?.source) {
-          const target = source => flatPoint(gripPose(frame, source), 0.32) ??
-            hits.find(input => input.source === source)?.hit?.point;
+          const target = source => flatPoint(gripPose(frame, source), 0.32);
           const anchor = target(construction.source);
           if (anchor) construction.anchor = anchor;
           if (adjustFigure && !controllers.includes(adjustFigure.source)) adjustFigure = null;
@@ -820,20 +778,16 @@ export async function enterVR(board, onEnd, onFailure) {
           hits.find(input => input.hit);
         const hover = pointer?.hit.surface === room.palette ? buttonAt(buttons, pointer.hit.uv)?.id : null;
         const active = [board.tool, rulerVisible && 'ruler', protractor && 'protractor',
-          protractor && 'shape:' + shape,
-          ...Array.from(heldTools.values(), tool => tool.sponge ? 'sponge' : 'marker'),
-          settingsOpen && 'page:' + settingsPage];
+          protractor && 'shape:' + shape, settingsOpen && 'page:' + settingsPage];
         const nextPalette = JSON.stringify([active, hover, Boolean(controllers.length)]);
         if (paletteState !== nextPalette) {
           paletteState = nextPalette;
           paintPalette(paletteCanvas, buttons, active, hover, protractor, rulerVisible, Boolean(controllers.length), settingsOpen);
           renderer.update(renderer.interfaceTexture, paletteCanvas.canvas);
         }
-        const previewInputs = protractor && !construction ? hits.filter(input => input.hit?.point) : [];
-        previewInputs.sort((a, b) => Number(b === pointer) - Number(a === pointer));
         const previews = protractor && construction ?
           [figure(shape, construction.anchor, construction.scale, construction.rotation, settings.angle)] :
-          previewInputs.map(input => figure(shape, input.hit.point, 1, 0, settings.angle));
+          [];
         const shownRuler = rulerVisible ? ruler : null;
         const heldEnd = drag?.type === 'magnet' ? drag.end : null;
         const nextGuide = JSON.stringify([shownRuler, heldEnd, previews.map(({anchor, angle, scale}) => [anchor, angle, scale]),
@@ -885,11 +839,14 @@ export async function enterVR(board, onEnd, onFailure) {
           }
           const toolAxes = [room.board.right, room.board.down, room.board.normal];
           drawBox(renderer, room.hinge, toolAxes, [0.052, 0.070, 0.045], [0.84, 0.61, 0.29, 1]);
-          drawBox(renderer, at(room.board, -0.13, 0.36, 0.065), toolAxes, [0.038, shownRuler ? 0.10 : 0.29, 0.019],
+          drawBox(renderer, room.rulerDock, toolAxes, [0.038, shownRuler ? 0.10 : 0.23, 0.019],
             highlighted.has('rulerHook') ? [1, 0.83, 0.42, 1] : [0.80, 0.62, 0.30, 1]);
-          if (!protractor) drawProtractor(renderer, room.board, [-187, 605], Math.PI / 2, 0.57);
+          if (!protractor) {
+            const dock = {...room.board, origin: room.protractorDock, width: 0.68, height: 0.46};
+            drawProtractor(renderer, dock, [0, 0], Math.PI / 2, 0.76);
+          }
           if (highlighted.has('protractorHook') || protractor) {
-            drawSphere(renderer, at(room.board, -0.13, 0.63, 0.065), 0.021,
+            drawSphere(renderer, room.protractorDock, 0.021,
               highlighted.has('protractorHook') ? [1, 0.83, 0.42, 1] : [0.44, 0.75, 0.66, 1]);
           }
           const rackAxes = [room.right, [0, 1, 0], room.ahead];
@@ -935,12 +892,13 @@ export async function enterVR(board, onEnd, onFailure) {
             const uv = rayToPanel(wrist.surface, pointer.hit.origin, pointer.hit.direction);
             if (uv) drawPointer(renderer, {...pointer.hit, surface: wrist.surface, uv}, [0.95, 0.79, 0.38, 1]);
           }
-          if (pointer && (!heldTools.has(pointer.source) || pointer.hit.surface === room.palette || protractor || grabTargets.get(pointer.source))) {
-            const color = pointer.hit.surface === room.palette ? [1, 0.91, 0.59, 1] : [0.24, 0.48, 0.38, 1];
-            drawPointer(renderer, pointer.hit, color);
-          }
-          for (const input of previewInputs) {
-            if (input !== pointer) drawPointer(renderer, input.hit, [0.43, 0.61, 0.53, 1]);
+          if (pointer?.hit.surface === room.palette) {
+            drawPointer(renderer, pointer.hit, [1, 0.91, 0.59, 1]);
+          } else if (pointer) {
+            const target = grabTargets.get(pointer.source);
+            if (target && length(sub(target.center, pointer.hit.origin)) > 0.20) {
+              drawPointer(renderer, {origin: pointer.hit.origin, destination: target.center}, [1, 0.91, 0.59, 1]);
+            }
           }
           if (shadeAmount > 0.01) drawVignette(renderer, vignette, view.transform, shadeAmount, view);
         }

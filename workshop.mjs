@@ -167,6 +167,6 @@ export function drawMarker(renderer, pose, color) {
 }
 
 export function rackPosition(board, index, count, left = false) {
-  const u = 0.15 + index * (0.48 / Math.max(1, count - 1));
-  return at(board, left ? 1 - u : u, 1.045, 0.12);
+  const offset = (index - (count - 1) / 2) * 0.105;
+  return at(board, 0.5 + (left ? -offset : offset) / board.width, 1.045, 0.20);
 }

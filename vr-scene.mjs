@@ -1,6 +1,6 @@
 import { add, at, cross, forward, length, mul, unit, xyz } from './geometry.mjs';
 import { boardHeight, boardWidth, magnetReach, magneticStep, shapes } from './instruments.mjs?v=5';
-import { rotateY } from './workshop.mjs?v=5';
+import { rotateY } from './workshop.mjs?v=7';
 
 export const paletteWidth = 600;
 export const paletteHeight = 1260;
@@ -53,16 +53,22 @@ export function arrangeBoard(room, settings) {
   const width = 2.16 * settings.size;
   const height = 1.44 * settings.size;
   const board = panel(add(add(center, mul(right, -width / 2)), mul(downAxis, -height / 2)), right, downAxis, width, height);
-  const palette = panel(room.position(1.65, 2.10, Math.min(settings.distance, 1.95)), room.right, down, 0.68, 1.44);
-  const practice = panel(room.position(1.65, 0.61, Math.min(settings.distance, 1.95)), room.right, down, 0.68, 0.31);
+  const menuEdge = at(board, 1.04, 0.5, 0.25);
+  const palette = panel(add(menuEdge, [0, 0.51, 0]), room.right, down, 0.48, 1.00);
+  const practice = panel(add(menuEdge, [0, -0.52, 0]), room.right, down, 0.48, 0.22);
   const frame = panel(at(board, -0.025, -0.035, -0.035), right, downAxis, width * 1.05, height * 1.07);
   const tray = panel(at(board, -0.025, 1.075, -0.008), right, mul(downAxis, -1), width * 1.05, 0.11);
-  const trayTop = panel(at(board, -0.025, 1.01, 0), right, toward, width * 1.05, 0.22);
+  const trayTop = panel(at(board, -0.025, 1.045, 0), right, toward, width * 1.05, 0.28);
   const supports = [-0.55, 0.35].map(x =>
     panel(room.position(x + settings.shift, settings.height, settings.distance + 0.12), room.right, down, 0.09, settings.height));
   const handles = [-0.052, 1.052].map(u => at(board, u, 0.53, 0.045));
   const hinge = at(board, -0.067, 0.77, 0.065);
-  Object.assign(room, {board, palette, practice, handles, hinge, hardware: [frame, tray, trayTop, ...supports]});
+  const traySide = settings.trayLeft ? -1 : 1;
+  const spongeDock = at(board, 0.5 + traySide * 0.43 / width, 1.045, 0.20);
+  const rulerDock = at(board, 0.5 - traySide * 0.61 / width, 0.91, 0.20);
+  const protractorDock = at(board, 0.5 - traySide * 0.43 / width, 0.96, 0.20);
+  Object.assign(room, {board, palette, practice, handles, hinge, spongeDock, rulerDock, protractorDock,
+    hardware: [frame, tray, trayTop, ...supports]});
 }
 
 export function renderRoom(renderer, room, overlay, grid, practice, lighting) {
@@ -83,8 +89,9 @@ export function renderRoom(renderer, room, overlay, grid, practice, lighting) {
   }
 }
 
-export function drawPointer(renderer, {surface, uv, origin, direction}, color) {
-  const hit = surface ? at(surface, ...uv, 0.008) : add(origin, mul(direction, 2.8));
+export function drawPointer(renderer, {surface, uv, origin, destination}, color) {
+  const hit = surface ? at(surface, ...uv, 0.008) : destination;
+  if (!hit) return;
   const vector = add(hit, mul(origin, -1));
   const sideways = cross(vector, up);
   if (length(sideways) > 0.001 && length(vector) > 0.02) {
@@ -115,7 +122,7 @@ export const adjustments = [
   ['angle', 'Угол', 5, '°', 3], ['angleStep', 'Шаг угла', 1, '°', 3]
 ];
 
-export function paletteButtons(colors, protractor, settingsOpen, settings, page = 0, confirm = false) {
+export function paletteButtons(colors, protractor, settingsOpen, settings, page = 0, confirm = false, ready = false) {
   if (settingsOpen) {
     const tabs = ['Доска', 'Перо', 'Ходьба', 'Геометрия'].map((label, i) =>
       ({id: 'page:' + i, label, x: 22 + i * 141, y: 96, w: 134, h: 58}));
@@ -153,16 +160,16 @@ export function paletteButtons(colors, protractor, settingsOpen, settings, page 
   }));
   buttons.push(
     {id: 'settings', label: '⚙', x: 481, y: 22, w: 91, h: 82},
-    {id: 'marker', label: 'Взять / убрать маркер', x: 28, y: protractor ? 522 : 858, w: 544, h: protractor ? 48 : 82},
-    {id: 'sponge', label: 'Губка', x: 28, y: 964, w: 264, h: 88},
-    {id: 'return', label: 'Вернуть', x: 308, y: 964, w: 264, h: 88},
-    {id: 'eraser', label: 'Ластик', x: 28, y: 310, w: 264, h: 92},
-    {id: 'ruler', label: 'Линейка', x: 308, y: 310, w: 264, h: 92},
-    {id: 'protractor', label: 'Транспортир', x: 28, y: 420, w: 544, h: 92},
+    {id: 'ruler', label: 'Линейка', x: 28, y: 310, w: 264, h: 92},
+    {id: 'protractor', label: 'Фигуры', x: 308, y: 310, w: 264, h: 92},
+    {id: 'return', label: 'На лоток', x: 28, y: 964, w: 264, h: 88},
     {id: 'undo', label: 'Отменить', x: 28, y: 1100, w: 264, h: 94},
     {id: 'exit', label: 'Выйти', x: 308, y: 1100, w: 264, h: 94}
   );
   if (protractor) {
+    if (ready) buttons.push(
+      {id: 'figureCancel', label: 'Сбросить', x: 28, y: 425, w: 264, h: 92},
+      {id: 'figureConfirm', label: 'Нанести', x: 308, y: 425, w: 264, h: 92});
     shapes.forEach(([id, label], i) => {
       const row = Math.floor(i / 3);
       const col = i % 3;
@@ -223,13 +230,12 @@ export function paintPalette(ctx, buttons, active, hover, protractor, ruler, con
   } else if (protractor) {
     ctx.fillText('Фигуры и углы', 28, 595);
     ctx.font = '25px sans-serif';
-    ctx.fillText('Хват второй рукой меняет размер и угол', 28, 921, 544);
+    ctx.fillText('Поставь центр боковой кнопкой у доски', 28, 921, 544);
   } else if (ruler) {
     ctx.fillText('Потяни за круглый магнит', 28, 592, 544);
     ctx.fillText('Веди маркер рядом с кромкой', 28, 650, 544);
   } else {
-    ctx.fillText('Хват: маркер на полке', 28, 592, 544);
-    ctx.fillText('Стики: ходьба и поворот', 28, 643, 544);
+    ctx.fillText('Возьми маркер с лотка', 28, 592, 544);
   }
 }
 
