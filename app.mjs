@@ -1,4 +1,4 @@
-import { enterVR } from './vr.mjs?v=5';
+import { enterVR } from './vr.mjs?v=6';
 
 const colors = {black: '#263238', indigo: '#4946a6', red: '#c0314b', teal: '#007d72', orange: '#b65a08'};
 const canvas = document.querySelector('#ink');
@@ -48,12 +48,12 @@ function remember() {
   undoButton.disabled = false;
 }
 
-function stroke(u, v, thickness, erase = tool === 'eraser') {
+function stroke(u, v, thickness, erase = tool === 'eraser', pigment = tool) {
   const x = u * canvas.width;
   const y = v * canvas.height;
   const width = thickness ?? (erase ? 54 : 14);
   context.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
-  context.strokeStyle = context.fillStyle = colors[tool] ?? '#000';
+  context.strokeStyle = context.fillStyle = colors[pigment] ?? '#000';
   context.lineCap = 'round';
   context.lineWidth = width;
   context.beginPath();

@@ -72,6 +72,29 @@ function vertices(points, shade = 1) {
   return new Float32Array(points.flatMap(point => [...point, 0, 0, shade]));
 }
 
+const sphere = [];
+for (let band = 0; band < 6; band++) {
+  for (let slice = 0; slice < 12; slice++) {
+    const point = (row, column) => {
+      const polar = Math.PI * row / 6;
+      const azimuth = Math.PI * column / 6;
+      const x = Math.sin(polar) * Math.cos(azimuth), y = Math.cos(polar), z = Math.sin(polar) * Math.sin(azimuth);
+      return [x, y, z, 0.72 + 0.21 * (y + 1) / 2 + 0.07 * (z + 1) / 2];
+    };
+    const a = point(band, slice), b = point(band, slice + 1);
+    const c = point(band + 1, slice + 1), d = point(band + 1, slice);
+    sphere.push(a, b, c, a, c, d);
+  }
+}
+
+export function drawSphere(renderer, [x, y, z], radius, color) {
+  const mesh = new Float32Array(sphere.length * 6);
+  sphere.forEach(([a, b, c, shade], i) => {
+    mesh.set([x + a * radius, y + b * radius, z + c * radius, 0, 0, shade], i * 6);
+  });
+  renderer.drawSolid(mesh, color);
+}
+
 export function drawBox(renderer, center, axes, size, color) {
   const faces = [];
   for (let i = 0; i < 3; i++) {
