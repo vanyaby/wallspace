@@ -1,4 +1,4 @@
-import { enterVR } from './vr.mjs?v=8';
+import { enterVR } from './vr.mjs?v=9';
 import { archive, recover, traceHull } from './ink-tools.mjs';
 
 const colors = {black: '#263238', indigo: '#4946a6', red: '#c0314b', teal: '#007d72', orange: '#b65a08'};

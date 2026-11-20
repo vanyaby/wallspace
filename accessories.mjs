@@ -54,16 +54,16 @@ export function wristPanel(grip, view) {
 }
 
 export function paintWrist(ctx) {
-  ctx.fillStyle = '#1d302e';
+  ctx.fillStyle = '#25272b';
   ctx.fillRect(0, 0, 512, 320);
   ctx.font = 'bold 31px sans-serif';
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
   wristActions.forEach(([, label], i) => {
     const x = (i % 2) * 256, y = Math.floor(i / 2) * (320 / 3);
-    ctx.fillStyle = '#395e54';
+    ctx.fillStyle = '#42464e';
     ctx.fillRect(x + 6, y + 6, 244, 320 / 3 - 12);
-    ctx.fillStyle = '#f8f5de';
+    ctx.fillStyle = '#f0f1f4';
     ctx.fillText(label, x + 128, y + 160 / 3, 222);
   });
 }
@@ -146,17 +146,17 @@ export function drawRuler(renderer, surface, ruler) {
   const point = (x, y) => add(a, add(mul(along, x), mul(side, y)));
   const outline = [[-15, 4], [distance + 15, 4], [distance + 25, 14], [distance + 25, 47],
     [distance + 15, 57], [-15, 57], [-25, 47], [-25, 14]].map(pair => point(...pair));
-  drawSlab(renderer, surface, outline, [0.43, 0.68, 0.77, 0.21], [0.15, 0.35, 0.44, 0.68], 0.008, 0.017);
+  drawSlab(renderer, surface, outline, [0.64, 0.67, 0.72, 0.21], [0.29, 0.32, 0.37, 0.68], 0.008, 0.017);
   const rail = [[-15, 49], [distance + 15, 49], [distance + 10, 55], [-10, 55]].map(pair => point(...pair));
-  drawSlab(renderer, surface, rail, [0.18, 0.39, 0.47, 0.85], [0.24, 0.47, 0.53, 1], 0.017, 0.020);
+  drawSlab(renderer, surface, rail, [0.35, 0.37, 0.43, 0.85], [0.48, 0.51, 0.56, 1], 0.017, 0.020);
   for (const end of ruler) {
     const ring = radius => Array.from({length: 20}, (_, i) => {
       const angle = i * Math.PI / 10;
       return add(end, [Math.cos(angle) * radius, Math.sin(angle) * radius]);
     });
-    drawSlab(renderer, surface, ring(25), [0.20, 0.32, 0.37, 1], [0.36, 0.48, 0.53, 1], 0.006, 0.025);
-    drawSlab(renderer, surface, ring(19), [0.78, 0.85, 0.85, 1], [0.53, 0.61, 0.63, 1], 0.025, 0.028);
-    drawSlab(renderer, surface, ring(11), [0.24, 0.45, 0.53, 1], [0.40, 0.62, 0.69, 1], 0.028, 0.031);
+    drawSlab(renderer, surface, ring(25), [0.29, 0.31, 0.35, 1], [0.43, 0.46, 0.51, 1], 0.006, 0.025);
+    drawSlab(renderer, surface, ring(19), [0.79, 0.81, 0.84, 1], [0.53, 0.56, 0.60, 1], 0.025, 0.028);
+    drawSlab(renderer, surface, ring(11), [0.40, 0.43, 0.49, 1], [0.61, 0.64, 0.69, 1], 0.028, 0.031);
   }
 }
 
@@ -174,13 +174,13 @@ export function drawProtractor(renderer, surface, anchor, angle, scale) {
     rim.push(a, b, f, a, f, e);
     inner.push(d, c, segment(i + 1, 114), d, segment(i + 1, 114), segment(i, 114));
   }
-  renderer.drawSolid(vertices(face.map(point => pointOnBoard(surface, point, 0.017))), [0.52, 0.74, 0.75, 0.24]);
-  renderer.drawSolid(vertices(rim.map(point => pointOnBoard(surface, point, 0.020))), [0.24, 0.49, 0.55, 0.92]);
-  renderer.drawSolid(vertices(inner.map(point => pointOnBoard(surface, point, 0.020))), [0.38, 0.64, 0.67, 0.70]);
+  renderer.drawSolid(vertices(face.map(point => pointOnBoard(surface, point, 0.017))), [0.62, 0.65, 0.70, 0.24]);
+  renderer.drawSolid(vertices(rim.map(point => pointOnBoard(surface, point, 0.020))), [0.36, 0.39, 0.45, 0.92]);
+  renderer.drawSolid(vertices(inner.map(point => pointOnBoard(surface, point, 0.020))), [0.53, 0.56, 0.62, 0.70]);
   const across = mul([-Math.sin(angle), Math.cos(angle)], 5 * scale);
   const left = segment(42, 155), right = segment(0, 155);
   drawSlab(renderer, surface, [sub(left, across), sub(right, across), add(right, across), add(left, across)],
-    [0.37, 0.63, 0.66, 0.58], [0.22, 0.48, 0.54, 0.8], 0.010, 0.019);
+    [0.52, 0.55, 0.61, 0.58], [0.36, 0.39, 0.45, 0.8], 0.010, 0.019);
 }
 
 export function drawVignette(renderer, texture, pose, strength, view) {

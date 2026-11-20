@@ -1,13 +1,13 @@
 import { add, at, cross, forward, length, mul, unit, xyz } from './geometry.mjs';
 import { boardHeight, boardWidth, magneticStep, shapes } from './instruments.mjs?v=8';
-import { rotateY } from './workshop.mjs?v=8';
+import { rotateY } from './workshop.mjs?v=9';
 
 export const paletteWidth = 600;
 export const paletteHeight = 1260;
 const up = [0, 1, 0];
 const down = [0, -1, 0];
 const transparent = [0, 0, 0, 0];
-const paper = [0.97, 0.95, 0.89, 1];
+const paper = [0.96, 0.963, 0.970, 1];
 
 function panel(origin, right, down, width, height) {
   return {origin, right, down, width, height, normal: cross(down, right)};
@@ -27,18 +27,20 @@ export function createRoom(transform, referenceHasFloor) {
   const ceiling = 3.25;
   const floor = panel(position(-3.1, 0, 3.35), right, toward, 6.2, 6.85);
   const solids = [
-    [floor, [0.13, 0.20, 0.20, 1]],
-    [panel(position(-3.1, ceiling, 3.35), right, down, 6.2, ceiling), [0.11, 0.16, 0.17, 1]],
-    [panel(position(-3.1, ceiling, 3.35), toward, down, 6.85, ceiling), [0.08, 0.13, 0.14, 1]],
-    [panel(position(3.1, ceiling, -3.5), ahead, down, 6.85, ceiling), [0.08, 0.13, 0.14, 1]],
-    [panel(position(3.1, ceiling, -3.5), mul(right, -1), down, 6.2, ceiling), [0.09, 0.14, 0.15, 1]],
-    [panel(position(-3.1, ceiling, 3.35), right, toward, 6.2, 6.85), [0.073, 0.11, 0.12, 1]]
+    [floor, [0.18, 0.186, 0.20, 1]],
+    [panel(position(-3.1, ceiling, 3.35), right, down, 6.2, ceiling), [0.27, 0.277, 0.29, 1]],
+    [panel(position(-3.1, ceiling, 3.35), toward, down, 6.85, ceiling), [0.19, 0.195, 0.21, 1]],
+    [panel(position(3.1, ceiling, -3.5), ahead, down, 6.85, ceiling), [0.19, 0.195, 0.21, 1]],
+    [panel(position(3.1, ceiling, -3.5), mul(right, -1), down, 6.2, ceiling), [0.22, 0.225, 0.24, 1]],
+    [panel(position(-3.1, ceiling, 3.35), right, toward, 6.2, 6.85), [0.12, 0.125, 0.14, 1]],
+    [panel(position(-2.55, 2.96, 3.32), right, down, 5.10, 0.035), [0.78, 0.79, 0.81, 1]],
+    [panel(position(-3.08, 0.13, 3.32), right, down, 6.16, 0.115), [0.13, 0.135, 0.15, 1]]
   ];
   for (let x = -3; x <= 3; x += 0.5) {
-    solids.push([panel(position(x, 0.002, 3.35), right, toward, 0.007, 6.85), [0.22, 0.31, 0.29, 1]]);
+    solids.push([panel(position(x, 0.002, 3.35), right, toward, 0.003, 6.85), [0.25, 0.256, 0.27, 1]]);
   }
   for (let z = -3; z <= 3; z += 0.5) {
-    solids.push([panel(position(-3.1, 0.002, z), right, toward, 6.2, 0.007), [0.22, 0.31, 0.29, 1]]);
+    solids.push([panel(position(-3.1, 0.002, z), right, toward, 6.2, 0.003), [0.25, 0.256, 0.27, 1]]);
   }
   return {origin, right, ahead, solids, position};
 }
@@ -71,21 +73,21 @@ export function arrangeBoard(room, settings) {
     hardware: [frame, tray, trayTop, ...supports]});
 }
 
-export function renderRoom(renderer, room, overlay, grid, practice, lighting) {
+export function renderRoom(renderer, room, overlay, grid, practice, lighting, inkView) {
   const light = 0.55 + lighting * 0.15;
   for (const [surface, color] of room.solids) {
     renderer.draw(surface, renderer.empty, [...color.slice(0, 3).map(value => value * light), 1]);
   }
-  for (const surface of room.hardware) renderer.draw(surface, renderer.empty, [0.31, 0.37, 0.33, 1]);
-  renderer.draw(room.board, renderer.ink, paper);
-  renderer.drawDecal(room.board, grid, transparent, 0.002);
+  for (const surface of room.hardware) renderer.draw(surface, renderer.empty, [0.31, 0.322, 0.35, 1]);
+  renderer.drawInk(room.board, paper, inkView);
+  renderer.drawDecal(room.board, grid, transparent, 0.002, inkView);
   renderer.drawDecal(room.board, overlay, transparent, 0.033);
   renderer.draw(room.palette, renderer.interfaceTexture, transparent);
   renderer.draw(room.practice, practice, paper);
   for (const point of room.handles) {
     const {right, down} = room.board;
     const rail = panel(add(point, add(mul(right, -0.021), mul(down, -0.10))), right, down, 0.042, 0.20);
-    renderer.draw(rail, renderer.empty, [0.57, 0.72, 0.62, 1]);
+    renderer.draw(rail, renderer.empty, [0.58, 0.601, 0.64, 1]);
   }
 }
 
@@ -113,6 +115,7 @@ export const adjustments = [
   ['resistance', 'Тугость', 1, '/4', 1, ['Свободное', '1/4', 'Письмо', '3/4', 'Плотное']], ['width', 'Толщина', 2, '', 1],
   ['haptics', 'Вибрация', 1, '/4', 1], ['volume', 'Громкость', 1, '/4', 1],
   ['gripLeft', 'Хват левой', 5, '°', 1], ['gripRight', 'Хват правой', 5, '°', 1],
+  ['reachLeft', 'Вылет слева', 5, ' мм', 1], ['reachRight', 'Вылет справа', 5, ' мм', 1],
   ['touch', 'Контакт', 1, ' мм', 1], ['trail', 'Сглаживание', 1, '/4', 1],
   ['speed', 'Скорость', 0.15, ' м/с', 2], ['acceleration', 'Разгон', 2, '', 2],
   ['turn', 'Поворот', 15, '°', 2, null], ['turnSpeed', 'Темп поворота', 15, '°/с', 2],
@@ -127,12 +130,13 @@ export function paletteButtons(colors, protractor, settingsOpen, settings, page 
     const tabs = ['Доска', 'Перо', 'Ходьба', 'Фигуры', 'Файл'].map((label, i) =>
       ({id: 'page:' + i, label, x: 22 + i * 112, y: 96, w: 106, h: 58}));
     const buttons = adjustments.filter(([, , , , tab]) => page === tab).flatMap(([id, label, , unit, , names], row) => {
-      const y = 170 + row * 74;
+      const y = 170 + row * (page === 1 ? 59 : 74);
+      const h = page === 1 ? 53 : 68;
       const value = names?.[settings[id]] ?? (id === 'turn' && !settings.turn ? 'Плавно' : Number(settings[id].toFixed(2)) + unit);
       const name = label + ' · ' + value;
-      return [{id: id + ':-', label: '−', x: 28, y, w: 90, h: 68},
-        {id: id + ':label', label: name, x: 126, y, w: 348, h: 68, readOnly: true},
-        {id: id + ':+', label: '+', x: 482, y, w: 90, h: 68}];
+      return [{id: id + ':-', label: '−', x: 28, y, w: 90, h},
+        {id: id + ':label', label: name, x: 126, y, w: 348, h, readOnly: true},
+        {id: id + ':+', label: '+', x: 482, y, w: 90, h}];
     });
     const extras = [
       [['seated', 'Сидя'], ['standing', 'Стоя'], ['drafting', 'Чертёж'], ['locked', settings.locked ? 'Снять замок' : 'Зафиксировать'],
@@ -184,6 +188,7 @@ export function paletteButtons(colors, protractor, settingsOpen, settings, page 
       buttons.push({id: 'shape:' + id, label, x: 28 + 184 * col, y: 623 + 116 * row, w: 176, h: 100});
     });
   }
+  if (!protractor) buttons.push({id: 'viewReset', label: 'Масштаб 100%', x: 28, y: 846, w: 544, h: 82});
   return buttons;
 }
 
@@ -195,45 +200,45 @@ export function buttonAt(buttons, [u, v]) {
 }
 
 export function paintPalette(ctx, buttons, active, hover, protractor, ruler, controllersReady, settingsOpen, status) {
-  ctx.fillStyle = '#182625';
+  ctx.fillStyle = '#212326';
   ctx.fillRect(0, 0, paletteWidth, paletteHeight);
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
   ctx.font = 'bold 51px sans-serif';
-  ctx.fillStyle = '#f6f2df';
+  ctx.fillStyle = '#f3f4f6';
   ctx.fillText(settingsOpen ? 'Настройки' : 'WALLSPACE', 28, 53);
-  ctx.fillStyle = '#aec6bb';
+  ctx.fillStyle = '#bfc2c8';
   ctx.font = '29px sans-serif';
   if (!settingsOpen) ctx.fillText('Цвет маркера', 28, 116);
   ctx.textAlign = 'center';
   for (const {id, color, label, x, y, w, h} of buttons) {
     const selected = active.includes(id);
-    ctx.fillStyle = selected ? '#547d6f' : '#304844';
+    ctx.fillStyle = selected ? '#545961' : '#363a40';
     ctx.fillRect(x, y, w, h);
     if (selected || id === hover) {
-      ctx.strokeStyle = id === hover ? '#fff3c2' : '#a6e2c2';
+      ctx.strokeStyle = id === hover ? '#ffffff' : '#b9c0cb';
       ctx.lineWidth = 4;
       ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
     }
     if (color) {
       ctx.fillStyle = color;
-      ctx.strokeStyle = '#eae5cf';
+      ctx.strokeStyle = '#e4e6e9';
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.arc(x + w / 2, y + h / 2, 23, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     } else {
-      ctx.fillStyle = '#f6f2df';
+      ctx.fillStyle = '#f3f4f6';
       ctx.font = label.length > 10 ? 'bold 27px sans-serif' : 'bold 34px sans-serif';
       ctx.fillText(label, x + w / 2, y + h / 2, w - 12);
     }
   }
   ctx.textAlign = 'left';
-  ctx.fillStyle = status.error ? '#ffd0bc' : '#b8d9c8';
+  ctx.fillStyle = status.error ? '#ffd0bc' : '#c1c5cd';
   ctx.font = '25px sans-serif';
   ctx.fillText(status.text, 28, 1220, 544);
-  ctx.fillStyle = '#c6d8cc';
+  ctx.fillStyle = '#c1c5cd';
   ctx.font = '30px sans-serif';
   if (settingsOpen) return;
   if (!controllersReady) {

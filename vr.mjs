@@ -1,12 +1,12 @@
 import { add, at, cross, dot, forward, inside, length, mul, project, rayToPanel, sub, xyz } from './geometry.mjs';
 import { boardHeight, boardWidth, figure, initialRuler, magnetReach, moveMagnet, moveRuler, projectToRuler } from './instruments.mjs?v=8';
-import { makeRenderer } from './renderer.mjs?v=8';
+import { makeRenderer } from './renderer.mjs?v=9';
 import { adjustments, arrangeBoard, buttonAt, createRoom, drawPointer, paintGuide, paintPalette, paletteButtons,
-  paletteHeight, paletteWidth, renderRoom } from './vr-scene.mjs?v=8';
+  paletteHeight, paletteWidth, renderRoom } from './vr-scene.mjs?v=9';
 import { clamp, constrainWalk, contactPoint, controls, drawMarker, flat, limits, loadSettings, markerPose, offsetSpace,
-  placementKeys, pulse, rackPosition, rememberSettings, rotateY } from './workshop.mjs?v=8';
+  placementKeys, pulse, rackPosition, rememberSettings, rotateY } from './workshop.mjs?v=9';
 import { createSound, drawArc, drawBox, drawFootprint, drawProtractor, drawRuler, drawSphere, drawVignette, makePanel, paintWrist,
-  teleportArc, wristActions, wristPanel } from './accessories.mjs?v=8';
+  teleportArc, wristActions, wristPanel } from './accessories.mjs?v=9';
 import { traceHull } from './ink-tools.mjs';
 
 function makeCanvas(width, height) {
@@ -113,9 +113,9 @@ export async function enterVR(board, onEnd, onFailure) {
     paintWrist(wristCanvas);
     renderer.update(wristTexture, wristCanvas.canvas);
     const hint = makeCanvas(512, 104);
-    hint.fillStyle = '#263f3c';
+    hint.fillStyle = '#30343b';
     hint.fillRect(0, 0, 512, 104);
-    hint.fillStyle = '#ebf7ec';
+    hint.fillStyle = '#eff1f5';
     hint.font = 'bold 39px sans-serif';
     hint.textAlign = 'center';
     hint.fillText('Возьми маркер боковой кнопкой', 256, 64, 466);
@@ -143,6 +143,9 @@ export async function enterVR(board, onEnd, onFailure) {
     let home = true;
     const heldTools = new Map();
     const hoveredPickups = new Map();
+    const zoomHands = new Set();
+    let zoom = null;
+    let inkView = settings.view ?? {scale: 1, x: 0, y: 0};
     let writingSource = null;
     let contact = null;
     let contactSurface = null;
@@ -218,6 +221,8 @@ export async function enterVR(board, onEnd, onFailure) {
     function resetRoom() {
       stopDrag();
       liftMarker();
+      finishZoom();
+      zoomHands.clear();
       room = null;
       activeSpace = space;
       displacement = [0, 0, 0];
@@ -243,6 +248,11 @@ export async function enterVR(board, onEnd, onFailure) {
         board.undo();
       } else if (id === 'redo') {
         board.redo();
+      } else if (id === 'viewReset') {
+        liftMarker();
+        finishZoom();
+        zoomHands.clear();
+        settings.view = inkView = {scale: 1, x: 0, y: 0};
       } else if (id === 'save') {
         board.save();
       } else if (id === 'export') {
@@ -331,7 +341,10 @@ export async function enterVR(board, onEnd, onFailure) {
           }
           liftMarker();
           board.selectTool(lastColor);
-          board.stamp(draft, settings.width);
+          board.stamp({...draft, points: draft.points.map(([x, y]) => {
+            const [u, v] = inkPoint([x / boardWidth, y / boardHeight]);
+            return [u * boardWidth, v * boardHeight];
+          })}, settings.width / inkView.scale);
           pulse(source, settings.haptics * 0.065, 25);
         }
         construction = adjustFigure = null;
@@ -362,6 +375,41 @@ export async function enterVR(board, onEnd, onFailure) {
       if (!grip) return null;
       const [u, v, depth] = project(room.board, xyz(grip.position));
       return Math.abs(depth) <= maxDepth ? [u * boardWidth, v * boardHeight] : null;
+    }
+
+    function inkPoint([u, v]) {
+      return [(u - inkView.x) / inkView.scale, (v - inkView.y) / inkView.scale];
+    }
+
+    function finishZoom() {
+      if (!zoom) return;
+      zoom = null;
+      rememberSettings(settings);
+    }
+
+    function updateZoom(hands) {
+      const palms = hands.filter(({source}) => zoomHands.has(source))
+        .map(({grip}) => flatPoint(grip, 0.34));
+      if (palms.length !== 2 || palms.some(point => !point)) {
+        finishZoom();
+        return;
+      }
+      const [a, b] = palms;
+      const spread = length(sub(a, b));
+      if (spread < 60 && !zoom) return;
+      const midpoint = [(a[0] + b[0]) / (2 * boardWidth), (a[1] + b[1]) / (2 * boardHeight)];
+      if (!zoom) {
+        liftMarker();
+        zoom = {spread, scale: inkView.scale, anchor: inkPoint(midpoint)};
+        for (const source of zoomHands) pulse(source, settings.haptics * 0.045, 24);
+        return;
+      }
+      const scale = clamp(zoom.scale * spread / zoom.spread, 1, 4);
+      settings.view = inkView = {
+        scale,
+        x: clamp(midpoint[0] - zoom.anchor[0] * scale, 1 - scale, 0),
+        y: clamp(midpoint[1] - zoom.anchor[1] * scale, 1 - scale, 0)
+      };
     }
 
     function gripKey(source) {
@@ -486,7 +534,7 @@ export async function enterVR(board, onEnd, onFailure) {
       }
       if (mode === 'select' && calibration === source && grip) {
         const key = gripKey(source);
-        const model = markerPose(grip, settings['grip' + key]);
+        const model = markerPose(grip, settings['grip' + key], undefined, settings['reach' + key]);
         const delta = sub(at(room.board, 0.5, 0.53), model.tip);
         if (length(delta) <= 0.16) {
           settings['gripOffset' + key] = [dot(delta, model.localRight), dot(delta, model.localUp), dot(delta, model.direction)];
@@ -525,7 +573,12 @@ export async function enterVR(board, onEnd, onFailure) {
           return;
         }
         if (drag?.source === source) return;
-        if (geometryGrab(source, flatPoint(grip))) return;
+        const point = flatPoint(grip);
+        if (geometryGrab(source, point)) return;
+        if (!drag && !protractor && !calibration && point && inside([point[0] / boardWidth, point[1] / boardHeight])) {
+          zoomHands.add(source);
+          return;
+        }
         if (grip) {
           const hand = xyz(grip.position);
           if (!drag && !settings.locked && length(sub(hand, room.hinge)) < 0.085) {
@@ -568,6 +621,7 @@ export async function enterVR(board, onEnd, onFailure) {
     }
 
     function end(event, mode) {
+      if (mode === 'squeeze' && zoomHands.delete(event.inputSource)) finishZoom();
       if (drag?.source === event.inputSource && drag.mode === mode) stopDrag();
       if (mode === 'squeeze' && heldTools.get(event.inputSource)?.momentary) returnTool(event.inputSource);
       if (mode === 'squeeze' && construction?.source === event.inputSource) {
@@ -585,6 +639,8 @@ export async function enterVR(board, onEnd, onFailure) {
       if (session.visibilityState !== 'visible') {
         stopDrag();
         liftMarker();
+        finishZoom();
+        zoomHands.clear();
         lastTime = null;
         teleport = null;
         teleportHeld = false;
@@ -622,7 +678,7 @@ export async function enterVR(board, onEnd, onFailure) {
       }
       let next = eye;
       let homeTurn = null;
-      const canMove = !settings.freeze || !contact;
+      const canMove = !zoom && (!settings.freeze || !contact);
       if (home && canMove) {
         const point = at(room.board, 0.5, 0.5);
         const normal = flat(room.board.normal, mul(room.ahead, -1));
@@ -675,13 +731,13 @@ export async function enterVR(board, onEnd, onFailure) {
       const headAtBoard = project(room.board, eye);
       const throughBoard = headAtBoard && inside(headAtBoard) && headAtBoard[2] < 0.05 && headAtBoard[2] > -0.15;
       if (throughBoard) shadeAmount = Math.max(shadeAmount, 0.8);
-      const canWrite = !throughBoard && drag?.type !== 'board';
+      const canWrite = !zoom && !throughBoard && drag?.type !== 'board';
       const tools = hands.flatMap(({source, grip}) => {
         const tool = heldTools.get(source);
         if (!tool || !grip) return [];
         const key = gripKey(source);
         const {sponge} = tool;
-        const model = markerPose(grip, sponge ? 0 : settings['grip' + key], settings['gripOffset' + key]);
+        const model = markerPose(grip, sponge ? 0 : settings['grip' + key], settings['gripOffset' + key], settings['reach' + key]);
         if (sponge) model.tip = add(xyz(grip.position), mul(model.axis, 0.055));
         model.chisel = !sponge && tool.wide;
         const free = source !== construction?.source && source !== adjustFigure?.source &&
@@ -766,9 +822,9 @@ export async function enterVR(board, onEnd, onFailure) {
           }
           trialDirty = true;
         } else if (eraseCorners) {
-          board.eraseFootprint(eraseCorners);
+          board.eraseFootprint(eraseCorners.map(inkPoint));
         } else {
-          board.stroke(...sample.ink, width, false, id);
+          board.stroke(...inkPoint(sample.ink), width / inkView.scale, false, id);
           if (onboarding) {
             onboarding = null;
             settings.introduced = true;
@@ -831,6 +887,8 @@ export async function enterVR(board, onEnd, onFailure) {
           if (!controllers.includes(source)) returnTool(source);
         }
         const hits = controllers.map(source => ({source, hit: locate(frame, activeSpace, room, source), grip: gripPose(frame, source)}));
+        for (const source of zoomHands) if (!controllers.includes(source)) zoomHands.delete(source);
+        updateZoom(hits);
         const sourceForWrist = controllers.find(source => source.handedness === (settings.hand ? 'right' : 'left')) ??
           controllers[0];
         const held = Boolean(sourceForWrist?.gamepad?.buttons?.[3]?.pressed);
@@ -899,7 +957,9 @@ export async function enterVR(board, onEnd, onFailure) {
           error: board.saveState === 'error',
           text: board.saveState === 'error' ? 'Ошибка сохранения · Файл → Сохранить' :
             performance.now() < messageUntil ? message :
-              contact || board.saveState === 'pending' ? 'Есть несохранённые изменения' : 'Рисунок сохранён в браузере'
+              contact || board.saveState === 'pending' ? 'Есть несохранённые изменения' :
+                inkView.scale !== 1 || zoom ? 'Масштаб · ' + Math.round(inkView.scale * 100) + '%':
+                  'Рисунок сохранён в браузере'
         };
         const nextPalette = JSON.stringify([active, hover, Boolean(controllers.length), status]);
         if (paletteState !== nextPalette) {
@@ -923,7 +983,7 @@ export async function enterVR(board, onEnd, onFailure) {
         if (boardGrid !== settings.grid) {
           boardGrid = settings.grid;
           gridCanvas.clearRect(0, 0, 720, 480);
-          gridCanvas.fillStyle = '#526d6027';
+          gridCanvas.fillStyle = '#53596325';
           if (boardGrid) {
             for (let x = 30; x < 720; x += 30) {
               if (boardGrid === 2) gridCanvas.fillRect(x, 0, 1, 480);
@@ -945,7 +1005,7 @@ export async function enterVR(board, onEnd, onFailure) {
         }
         for (const view of pose.views) {
           if (!renderer.selectView(layer, view)) continue;
-          renderRoom(renderer, room, guide, grid, practiceTexture, settings.light);
+          renderRoom(renderer, room, guide, grid, practiceTexture, settings.light, inkView);
           if (shownRuler) drawRuler(renderer, room.board, shownRuler);
           if (previews[0]?.protractor) {
             const {anchor, angle, scale} = previews[0];
@@ -971,9 +1031,9 @@ export async function enterVR(board, onEnd, onFailure) {
             }
           }
           const toolAxes = [room.board.right, room.board.down, room.board.normal];
-          drawBox(renderer, room.hinge, toolAxes, [0.052, 0.070, 0.045], [0.84, 0.61, 0.29, 1]);
+          drawBox(renderer, room.hinge, toolAxes, [0.052, 0.070, 0.045], [0.63, 0.65, 0.70, 1]);
           drawBox(renderer, room.rulerDock, toolAxes, [0.038, shownRuler ? 0.10 : 0.23, 0.019],
-            highlighted.has('rulerHook') ? [1, 0.83, 0.42, 1] : [0.80, 0.62, 0.30, 1]);
+            highlighted.has('rulerHook') ? [1, 0.83, 0.42, 1] : [0.62, 0.64, 0.69, 1]);
           if (!protractor) {
             const dock = {...room.board, origin: room.protractorDock, width: 0.68, height: 0.46};
             drawProtractor(renderer, dock, [0, 0], Math.PI / 2, 0.76);
@@ -988,10 +1048,10 @@ export async function enterVR(board, onEnd, onFailure) {
             const target = highlighted.has(item.slot);
             const base = item.base ?? spongeDock();
             drawBox(renderer, base, rackAxes, item.sponge ? [0.137, 0.020, 0.080] : [0.066, 0.022, 0.054],
-              target ? [0.94, 0.72, 0.32, 1] : [0.19, 0.27, 0.24, 1]);
+              target ? [0.94, 0.72, 0.32, 1] : [0.25, 0.266, 0.30, 1]);
             if (owner) continue;
             if (item.sponge) {
-              drawBox(renderer, item.center, rackAxes, [0.12, 0.051, 0.067], [0.83, 0.58, 0.24, 1]);
+              drawBox(renderer, item.center, rackAxes, [0.12, 0.051, 0.067], [0.68, 0.70, 0.74, 1]);
             } else {
               drawMarker(renderer, {axis: [0, 1, 0], tip: add(base, [0, 0.18, 0]), chisel: item.wide, localUp: room.ahead},
                 board.colors[item.id]);
@@ -1016,8 +1076,8 @@ export async function enterVR(board, onEnd, onFailure) {
           for (const {source, model, tool, surface: nearSurface} of tools) {
             if (tool.sponge) {
               const axes = [model.localRight, model.localUp, model.axis];
-              drawBox(renderer, sub(model.tip, mul(model.axis, 0.025)), axes, [0.111, 0.059, 0.05], [0.83, 0.58, 0.24, 1]);
-              drawBox(renderer, sub(model.tip, mul(model.axis, 0.005)), axes, [0.113, 0.061, 0.013], [0.26, 0.31, 0.28, 1]);
+              drawBox(renderer, sub(model.tip, mul(model.axis, 0.025)), axes, [0.111, 0.059, 0.05], [0.68, 0.70, 0.74, 1]);
+              drawBox(renderer, sub(model.tip, mul(model.axis, 0.005)), axes, [0.113, 0.061, 0.013], [0.28, 0.29, 0.32, 1]);
             } else drawMarker(renderer, model, board.colors[tool.id]);
             const waiting = nearSurface && writingSource && source !== writingSource;
             if (model.preview) drawFootprint(renderer, model.preview.surface, model.preview.points,

@@ -20,10 +20,11 @@ const fragmentSource = [
   'uniform vec4 uBacking;',
   'uniform float uBorder;',
   'uniform float uOpacity;',
+  'uniform vec3 uInkView;',
   'varying vec2 vUV;',
   'varying mediump float vShade;',
   'void main() {',
-  '  vec4 ink = texture2D(uTexture, vUV);',
+  '  vec4 ink = texture2D(uTexture, (vUV - uInkView.xy) / uInkView.z);',
   '  float backdrop = uBacking.a * (1.0 - ink.a);',
   '  float alpha = ink.a + backdrop;',
   '  vec3 color = (ink.rgb * ink.a + uBacking.rgb * backdrop) / max(alpha, 0.001);',
@@ -61,11 +62,13 @@ export function makeRenderer(gl) {
   const backingColor = gl.getUniformLocation(program, 'uBacking');
   const borderWidth = gl.getUniformLocation(program, 'uBorder');
   const opacity = gl.getUniformLocation(program, 'uOpacity');
+  const inkView = gl.getUniformLocation(program, 'uInkView');
   gl.uniform1f(opacity, 1);
+  gl.uniform3f(inkView, 0, 0, 1);
   gl.enable(gl.BLEND);
   gl.enable(gl.DEPTH_TEST);
   gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-  gl.clearColor(0.065, 0.10, 0.11, 1);
+  gl.clearColor(0.105, 0.11, 0.12, 1);
 
   const textures = [];
   function createTexture() {
@@ -110,6 +113,11 @@ export function makeRenderer(gl) {
 
   return {
     ink, interfaceTexture, empty, createTexture, update, draw,
+    drawInk(panel, background, view) {
+      gl.uniform3f(inkView, view.x, view.y, view.scale);
+      draw(panel, ink, background);
+      gl.uniform3f(inkView, 0, 0, 1);
+    },
     updateInk(canvas, rect) {
       if (!allocated.has(ink) || !rect) {
         update(ink, canvas);
@@ -124,9 +132,11 @@ export function makeRenderer(gl) {
       gl.bindTexture(gl.TEXTURE_2D, ink);
       gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, gl.RGBA, gl.UNSIGNED_BYTE, inkPatch);
     },
-    drawDecal(panel, texture, background, depth) {
+    drawDecal(panel, texture, background, depth, view) {
       gl.depthMask(false);
+      if (view) gl.uniform3f(inkView, view.x, view.y, view.scale);
       draw(panel, texture, background, 0, depth);
+      if (view) gl.uniform3f(inkView, 0, 0, 1);
       gl.depthMask(true);
     },
     drawScreen(panel, texture, background, strength) {
