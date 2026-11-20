@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#222537">
+  <title>WALLSPACE — доска для Meta Quest</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.mjs"></script>
+</head>
+<body>
+  <main>
+    <header class="masthead">
+      <div>
+        <h1>WALLSPACE</h1>
+        <p>Доска для комнаты и экрана</p>
+      </div>
+      <button id="mr" class="primary" disabled>Войти в MR <span aria-hidden="true">↗</span></button>
+    </header>
+    <section class="desk" aria-label="Доска для рисования">
+      <div class="toolbar">
+        <div role="group" aria-label="Цвет">
+          <button class="swatch" data-ink="indigo" aria-label="Индиго" aria-pressed="true"></button>
+          <button class="swatch" data-ink="red" aria-label="Красный" aria-pressed="false"></button>
+          <button class="swatch" data-ink="teal" aria-label="Бирюзовый" aria-pressed="false"></button>
+        </div>
+        <div class="tools" role="group" aria-label="Инструменты">
+          <button id="eraser" aria-pressed="false">Ластик</button>
+          <button id="undo" disabled>Отменить</button>
+          <button id="export">Скачать PNG</button>
+        </div>
+      </div>
+      <div class="paper"><canvas id="ink" width="1440" height="960" aria-label="Полотно для рисования мышью или касанием"></canvas></div>
+      <footer><span id="xr-status" role="status">Проверяем доступность MR…</span><span id="save-status" role="status">Хранение на этом устройстве</span></footer>
+    </section>
+    <details>
+      <summary>Как рисовать на стене в Meta Quest</summary>
+      <ol>
+        <li>Открой эту страницу в браузере гарнитуры. Включи отслеживание рук, отложи контроллеры и нажми «Войти в MR».</li>
+        <li>Щипком большого и указательного пальцев отметь на стене верхний левый, верхний правый и нижний левый углы в таком порядке. Разжимай пальцы после каждой точки.</li>
+        <li>После третьей точки отведи руку от стены, затем веди указательным пальцем у поверхности. Чтобы выбрать инструмент, направь руку на кнопку над доской и сделай щипок.</li>
+      </ol>
+      <p>Рисунок сохранится в браузере. Стену нужно размечать заново при каждом входе в MR.</p>
+    </details>
+  </main>
+</body>
+</html>
